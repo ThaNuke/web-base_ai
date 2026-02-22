@@ -1,0 +1,12 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+pillow>=10.4.0
+numpy
+scikit-learn
+torch
+torchvision
+
+# สำหรับเชื่อมต่อกับ AI models (optional)
+# transformers
+# requests
