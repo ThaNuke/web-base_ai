@@ -93,14 +93,8 @@ app = FastAPI(title="TruPic API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://web-base-ai.vercel.app",
-        "https://web-production-0d53c.up.railway.app",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:8000"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
