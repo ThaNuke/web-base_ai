@@ -4,12 +4,11 @@ python-multipart==0.0.6
 pillow>=10.4.0
 numpy
 scikit-learn
-torch
-torchvision
+opencv-python-headless
 timm
-opencv-python
 exif
 gdown>=4.6.0
+requests
 
 # สำหรับเชื่อมต่อกับ AI models (optional)
 # transformers
