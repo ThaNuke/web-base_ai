@@ -1,4 +1,4 @@
-FROM python:3.11
+FROM pytorch/pytorch:2.0.1-runtime-cpu
 
 WORKDIR /app
 
@@ -11,11 +11,8 @@ RUN pip install --no-cache-dir -q \
     uvicorn[standard]==0.24.0 \
     python-multipart==0.0.6 \
     pillow>=10.4.0 \
-    numpy \
     scikit-learn \
     opencv-python \
-    torch \
-    torchvision \
     timm \
     exif \
     gdown>=4.6.0 \
