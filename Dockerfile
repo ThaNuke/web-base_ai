@@ -2,15 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including bash
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend directory
 COPY backend/ .
 
-# Install Python dependencies (skip torch)
+# Install Python dependencies
 RUN pip install --no-cache-dir -q \
     fastapi==0.104.1 \
     uvicorn[standard]==0.24.0 \
@@ -26,5 +27,5 @@ RUN pip install --no-cache-dir -q \
 # Expose port
 EXPOSE 8000
 
-# Run uvicorn directly
+# Run uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
