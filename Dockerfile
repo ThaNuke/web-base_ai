@@ -7,10 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY backend/requirements.txt .
+# Copy backend directory
+COPY backend/ .
 
-# Install Python dependencies (skip torch, use CPU lightweight)
+# Install Python dependencies (skip torch)
 RUN pip install --no-cache-dir -q \
     fastapi==0.104.1 \
     uvicorn[standard]==0.24.0 \
@@ -23,11 +23,8 @@ RUN pip install --no-cache-dir -q \
     gdown>=4.6.0 \
     requests
 
-# Copy backend code
-COPY backend/ .
-
 # Expose port
 EXPOSE 8000
 
-# Run uvicorn
+# Run uvicorn directly
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
