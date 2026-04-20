@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: trupic-backend
+    env: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: GDRIVE_FULL_MODEL_ELA_PKL
+        fromBuild: true
+      - key: GDRIVE_FULL_MODEL_FREQ_PKL
+        fromBuild: true
+      - key: GDRIVE_FULL_MODEL_PIXELHYBRID_PKL
+        fromBuild: true
+      - key: GDRIVE_FULL_MODEL_XCEPTION_PKL
+        fromBuild: true
+
+  - type: static_site
+    name: trupic-frontend
+    env: static
+    plan: free
+    branch: main
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://trupic-backend.onrender.com

@@ -14,6 +14,33 @@ import cv2
 from PIL import ImageChops, ImageEnhance
 import timm
 import pickle
+import io
+
+
+# ==============================================================
+# 🔹 Custom Unpickler for CUDA → CPU device mapping
+# ==============================================================
+class CPUUnpickler(pickle.Unpickler):
+    """Map CUDA device references to CPU when unpickling"""
+    def find_class(self, module, name):
+        if module == 'torch.storage' and name == '_load_from_bytes':
+            return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
+        return super().find_class(module, name)
+
+
+def load_checkpoint_with_device_map(file_path, device):
+    """Load checkpoint with proper CUDA→CPU device mapping"""
+    try:
+        # Try torch.load first with explicit CPU mapping
+        return torch.load(file_path, map_location=torch.device('cpu'), weights_only=False)
+    except Exception as e1:
+        try:
+            # Fallback: use custom unpickler
+            with open(file_path, 'rb') as f:
+                unpickler = CPUUnpickler(f)
+                return unpickler.load()
+        except Exception as e2:
+            raise Exception(f"torch.load failed: {e1}, custom unpickler failed: {e2}")
 
 # ==============================================================
 # 🔹 Shared utility
@@ -328,7 +355,7 @@ def batch_infer_all(image_folder="Dataset_Senior_Project"):
     model_dir = script_dir / 'model'
     
     ckpt_paths = {
-        'ela': model_dir / 'elres_model.pkl',
+        'ela': model_dir / 'full_model_ela.pkl',
         'pixel': model_dir / 'full_model_pixelhybrid.pkl',
         'freq': model_dir / 'full_model_freq.pkl',
         'xception': model_dir / 'full_model_xception.pkl'
@@ -340,17 +367,14 @@ def batch_infer_all(image_folder="Dataset_Senior_Project"):
             continue
         
         try:
-            # Handle both .pkl and .pth files
-            if str(path).endswith('.pkl'):
-                # Load pickle files with pickle module
-                # Handle CPU-only machine loading saved CUDA checkpoints
-                import torch.nn as nn
-                with open(path, 'rb') as f:
-                    ckpt_raw = pickle.load(f)
+            import torch.nn as nn
+            
+            if str(path).endswith(('.pkl', '.pickle')):
+                # Use custom device mapping for pickle files
+                ckpt_raw = load_checkpoint_with_device_map(str(path), device)
                 
                 # Extract state_dict properly
                 if isinstance(ckpt_raw, nn.Module):
-                    # If whole model was saved, get state_dict
                     state = ckpt_raw.state_dict() if hasattr(ckpt_raw, 'state_dict') else ckpt_raw
                 elif isinstance(ckpt_raw, dict):
                     if 'model_state_dict' in ckpt_raw:
@@ -363,7 +387,7 @@ def batch_infer_all(image_folder="Dataset_Senior_Project"):
                     state = ckpt_raw
             else:
                 # Load PyTorch .pth files
-                ckpt = torch.load(str(path), map_location=device, weights_only=False)
+                ckpt = torch.load(str(path), map_location=torch.device('cpu'), weights_only=False)
                 state = ckpt.get('model_state_dict', ckpt)
             
             models_dict[key].load_state_dict(state, strict=False)

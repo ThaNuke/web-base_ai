@@ -6,7 +6,10 @@ numpy
 scikit-learn
 torch
 torchvision
+opencv-python
+exif
+gdown>=4.6.0
 
 # สำหรับเชื่อมต่อกับ AI models (optional)
 # transformers
-# requests
+requests
