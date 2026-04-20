@@ -3,7 +3,7 @@ import './App.css'
 import { FiShield, FiArrowDown, FiLock, FiTarget, FiUpload, FiX, FiBarChart2, FiChevronDown } from 'react-icons/fi'
 import { BiChevronRight } from 'react-icons/bi'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
+const API_URL = import.meta.env.VITE_API_URL || 'https://web-production-0d53c.up.railway.app'
 
 const heroImages = [
   `${API_URL}/background/5501.jpg`,
@@ -25,7 +25,7 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [loadingStep, setLoadingStep] = useState(null) // 'ai' | null
+  const [loadingStep, setLoadingStep] = useState(null) 
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [selectedMethod, setSelectedMethod] = useState(null)
