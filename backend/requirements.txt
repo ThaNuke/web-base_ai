@@ -6,6 +6,7 @@ numpy
 scikit-learn
 torch
 torchvision
+timm
 opencv-python
 exif
 gdown>=4.6.0

@@ -14,6 +14,9 @@ RUN pip install --no-cache-dir -q \
     numpy \
     scikit-learn \
     opencv-python \
+    torch \
+    torchvision \
+    timm \
     exif \
     gdown>=4.6.0 \
     requests
