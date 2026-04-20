@@ -105,19 +105,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup event to download models
+# Startup event - don't block on model download
 @app.on_event("startup")
 async def startup_event():
     logger.info("🚀 Starting backend server...")
-    if MODELS_DOWNLOAD_AVAILABLE:
-        try:
-            logger.info("📥 Ensuring models are downloaded...")
-            ensure_models_exist()
-            logger.info("✓ Models are ready!")
-        except Exception as e:
-            logger.warning(f"⚠️  Model download warning: {e}")
-    else:
-        logger.warning("⚠️  Model downloader not available")
+    # Note: Models will be downloaded on first request if needed
+    # This prevents Railway timeout on startup
 
 BASE_DIR = Path(__file__).resolve().parent.parent  
 UPLOAD_DIR = Path(__file__).parent / "uploads"
