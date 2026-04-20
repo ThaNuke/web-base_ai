@@ -918,6 +918,10 @@ async def analyze_image(image_path: str) -> dict:
         logger.error(f"Error in analyze_image: {type(e).__name__}: {str(e)}", exc_info=True)
         raise Exception(f"เกิดข้อผิดพลาดในการวิเคราะห์ภาพ: {type(e).__name__}: {str(e)}")
 
+@app.get("/")
+async def root():
+    return {"message": "TruPic API is running", "status": "ok"}
+
 @app.get("/api/health")
 async def health_check():
     return {
