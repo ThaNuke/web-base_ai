@@ -91,12 +91,17 @@ register_cuda_cpu_mappings()
 
 app = FastAPI(title="TruPic API", version="1.0.0")
 
-# CORS Configuration - Temporary: Allow all for testing
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://web-base-ai.vercel.app",
+        "https://web-production-0d53c.up.railway.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
