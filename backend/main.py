@@ -202,6 +202,19 @@ def _unload_model(name):
     gc.collect()
     logger.debug(f"Unloaded {name} model to free memory")
 
+def _log_memory():
+    """Log available memory (Linux /proc/meminfo)."""
+    try:
+        with open('/proc/meminfo', 'r') as f:
+            for line in f:
+                if 'MemAvailable' in line:
+                    avail_mb = int(line.split()[1]) / 1024
+                    logger.info(f"Memory available: {avail_mb:.0f}MB")
+                    return avail_mb
+    except Exception:
+        pass
+    return None
+
 def validate_image_file(file: UploadFile) -> bool:
     if not file.filename:
         return False
@@ -689,8 +702,10 @@ async def analyze_image(image_path: str) -> dict:
             logger.error(f"ELA model error: {e}")
             results["models"]["ela"] = {"error": str(e)}
         
-        # Unload ELA model before loading next - prevents OOM
+        # Drop local reference + unload global cache before next model
+        model = None
         _unload_model('ela')
+        _log_memory()
         
         try:
             model = load_xception_model()
@@ -712,8 +727,10 @@ async def analyze_image(image_path: str) -> dict:
             logger.error(f"Xception model error: {e}")
             results["models"]["xception"] = {"error": str(e)}
         
-        # Unload Xception model before loading next
+        # Drop local reference + unload global cache before next model
+        model = None
         _unload_model('xception')
+        _log_memory()
         
         try:
             model = load_freq_model()
@@ -744,8 +761,10 @@ async def analyze_image(image_path: str) -> dict:
             logger.error(f"Frequency model error: {e}")
             results["models"]["frequency"] = {"error": str(e)}
         
-        # Unload Frequency model before loading Pixel
+        # Drop local reference + unload global cache before next model
+        model = None
         _unload_model('frequency')
+        _log_memory()
         
         # Pixel is loaded last (largest model, lowest weight 0.16)
         # Check available memory to avoid OOM kill
