@@ -104,6 +104,16 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     logger.info("🚀 Starting backend server...")
+    
+    # Auto-download models if they don't exist
+    if MODELS_DOWNLOAD_AVAILABLE:
+        try:
+            logger.info("Checking for model files...")
+            ensure_models_exist()
+            logger.info("✓ Models available!")
+        except Exception as e:
+            logger.warning(f"Model download check failed: {e}")
+    
     logger.info("✓ Backend ready!")
 
 BASE_DIR = Path(__file__).resolve().parent.parent  

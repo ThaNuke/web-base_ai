@@ -8,12 +8,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Google Drive file IDs - EDIT THESE AFTER UPLOADING TO GOOGLE DRIVE
+# Google Drive file IDs - can be overridden by environment variables
 MODELS = {
-    "full_model_ela.pkl": "REPLACE_WITH_GOOGLE_DRIVE_ID_HERE",
-    "full_model_freq.pkl": "REPLACE_WITH_GOOGLE_DRIVE_ID_HERE",
-    "full_model_pixelhybrid.pkl": "REPLACE_WITH_GOOGLE_DRIVE_ID_HERE",
-    "full_model_xception.pkl": "REPLACE_WITH_GOOGLE_DRIVE_ID_HERE",
+    "full_model_ela.pkl": "1ib2WLtJPfDOQeaWJaJM_HQhM8qeDgeux",
+    "full_model_freq.pkl": "1m15sxulaBU5_YPzCkDp-lHzmZy_6dp7n",
+    "full_model_pixelhybrid.pkl": "1QUHlEKU3lXZ22ZzounKCBnwM3zf4Cc5W",
+    "full_model_xception.pkl": "1cxzQYMMwmVzLnuXoTsRsGi12l9e43Dfg",
 }
 
 MODEL_DIR = Path(__file__).parent.parent / "model"
@@ -27,8 +27,9 @@ def get_gdrive_id(model_name: str) -> str:
 
 def download_model(model_name: str, file_id: str) -> bool:
     """Download single model from Google Drive"""
-    if not file_id or file_id == "REPLACE_WITH_GOOGLE_DRIVE_ID_HERE":
+    if not file_id:
         logger.warning(f"⚠️  Skipping {model_name} - Google Drive ID not set")
+        logger.warning(f"   Set environment variable: GDRIVE_{model_name.upper().replace('.', '_')}")
         return False
     
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -36,14 +37,16 @@ def download_model(model_name: str, file_id: str) -> bool:
     
     # Skip if already exists
     if model_path.exists():
-        logger.info(f"✓ {model_name} already exists")
+        size_mb = model_path.stat().st_size / (1024 * 1024)
+        logger.info(f"✓ {model_name} already exists ({size_mb:.1f}MB)")
         return True
     
     try:
         logger.info(f"⏳ Downloading {model_name} from Google Drive...")
         url = f"https://drive.google.com/uc?id={file_id}&export=download"
         gdown.download(url, str(model_path), quiet=False)
-        logger.info(f"✓ Downloaded {model_name}")
+        size_mb = model_path.stat().st_size / (1024 * 1024)
+        logger.info(f"✓ Downloaded {model_name} ({size_mb:.1f}MB)")
         return True
     except Exception as e:
         logger.error(f"✗ Failed to download {model_name}: {e}")
@@ -64,13 +67,16 @@ def ensure_models_exist():
         else:
             failed.append(model_name)
     
-    logger.info(f"📊 Downloaded: {len(downloaded)}, Failed: {len(failed)}")
+    logger.info(f"📊 Downloaded: {len(downloaded)}/{len(MODELS)}")
     
     if failed:
-        logger.warning(f"⚠️  Some models failed to download: {failed}")
+        logger.warning(f"⚠️  {len(failed)} model(s) not available: {failed}")
+        logger.warning(f"📝 Set up environment variables with Google Drive IDs")
+        logger.warning(f"   See .env.example for configuration")
     
     return len(failed) == 0
 
 
 if __name__ == "__main__":
     ensure_models_exist()
+
