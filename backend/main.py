@@ -99,12 +99,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup event - don't block on model download
+# Startup event - simplified
 @app.on_event("startup")
 async def startup_event():
     logger.info("🚀 Starting backend server...")
-    # Note: Models will be downloaded on first request if needed
-    # This prevents Railway timeout on startup
+    logger.info("✓ Backend ready!")
 
 BASE_DIR = Path(__file__).resolve().parent.parent  
 UPLOAD_DIR = Path(__file__).parent / "uploads"
