@@ -184,6 +184,24 @@ _xception_model: Optional[object] = None
 _stacking_model: Optional[object] = None
 _stacking_checkpoint: Optional[dict] = None
 
+def _unload_model(name):
+    """Unload a specific cached model to free memory.
+    
+    With limited RAM (~512MB-1GB), we can't keep all 4 models in memory.
+    Unloading after each inference allows sequential model usage.
+    """
+    global _model, _pixel_model, _freq_model, _xception_model
+    if name == 'ela':
+        _model = None
+    elif name == 'pixel':
+        _pixel_model = None
+    elif name == 'frequency':
+        _freq_model = None
+    elif name == 'xception':
+        _xception_model = None
+    gc.collect()
+    logger.debug(f"Unloaded {name} model to free memory")
+
 def validate_image_file(file: UploadFile) -> bool:
     if not file.filename:
         return False
@@ -671,6 +689,9 @@ async def analyze_image(image_path: str) -> dict:
             logger.error(f"ELA model error: {e}")
             results["models"]["ela"] = {"error": str(e)}
         
+        # Unload ELA model before loading next - prevents OOM
+        _unload_model('ela')
+        
         try:
             model = load_xception_model()
             if model is not None:
@@ -690,6 +711,9 @@ async def analyze_image(image_path: str) -> dict:
         except Exception as e:
             logger.error(f"Xception model error: {e}")
             results["models"]["xception"] = {"error": str(e)}
+        
+        # Unload Xception model before loading next
+        _unload_model('xception')
         
         try:
             model = load_freq_model()
@@ -719,6 +743,9 @@ async def analyze_image(image_path: str) -> dict:
         except Exception as e:
             logger.error(f"Frequency model error: {e}")
             results["models"]["frequency"] = {"error": str(e)}
+        
+        # Unload Frequency model before loading Pixel
+        _unload_model('frequency')
         
         # Pixel is loaded last (largest model, lowest weight 0.16)
         # Check available memory to avoid OOM kill
