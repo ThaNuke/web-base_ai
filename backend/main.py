@@ -202,17 +202,42 @@ def _unload_model(name):
     gc.collect()
     logger.debug(f"Unloaded {name} model to free memory")
 
-def _log_memory():
-    """Log available memory (Linux /proc/meminfo)."""
+def _get_container_memory():
+    """Get container memory limit and usage from cgroups (works in Docker/Railway).
+    
+    /proc/meminfo shows HOST memory, not container limit.
+    Must read cgroup files for actual container memory.
+    Returns (limit_mb, usage_mb, available_mb) or (None, None, None).
+    """
+    # Try cgroup v2 first (modern Docker/containerd)
     try:
-        with open('/proc/meminfo', 'r') as f:
-            for line in f:
-                if 'MemAvailable' in line:
-                    avail_mb = int(line.split()[1]) / 1024
-                    logger.info(f"Memory available: {avail_mb:.0f}MB")
-                    return avail_mb
+        with open('/sys/fs/cgroup/memory.max', 'r') as f:
+            limit = f.read().strip()
+            limit_mb = float('inf') if limit == 'max' else int(limit) / (1024 * 1024)
+        with open('/sys/fs/cgroup/memory.current', 'r') as f:
+            usage_mb = int(f.read().strip()) / (1024 * 1024)
+        avail_mb = limit_mb - usage_mb if limit_mb != float('inf') else float('inf')
+        return limit_mb, usage_mb, avail_mb
     except Exception:
         pass
+    # Try cgroup v1
+    try:
+        with open('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'r') as f:
+            limit_mb = int(f.read().strip()) / (1024 * 1024)
+        with open('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'r') as f:
+            usage_mb = int(f.read().strip()) / (1024 * 1024)
+        avail_mb = limit_mb - usage_mb
+        return limit_mb, usage_mb, avail_mb
+    except Exception:
+        pass
+    return None, None, None
+
+def _log_memory(label=""):
+    """Log container memory usage."""
+    limit_mb, usage_mb, avail_mb = _get_container_memory()
+    if limit_mb is not None:
+        logger.info(f"Container memory{' ('+label+')' if label else ''}: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
+        return avail_mb
     return None
 
 def validate_image_file(file: UploadFile) -> bool:
@@ -705,7 +730,7 @@ async def analyze_image(image_path: str) -> dict:
         # Drop local reference + unload global cache before next model
         model = None
         _unload_model('ela')
-        _log_memory()
+        _log_memory('after ELA unload')
         
         try:
             model = load_xception_model()
@@ -730,7 +755,7 @@ async def analyze_image(image_path: str) -> dict:
         # Drop local reference + unload global cache before next model
         model = None
         _unload_model('xception')
-        _log_memory()
+        _log_memory('after Xception unload')
         
         try:
             model = load_freq_model()
@@ -764,23 +789,28 @@ async def analyze_image(image_path: str) -> dict:
         # Drop local reference + unload global cache before next model
         model = None
         _unload_model('frequency')
-        _log_memory()
+        _log_memory('after Frequency unload')
         
         # Pixel is loaded last (largest model, lowest weight 0.16)
         # Check available memory to avoid OOM kill
         _skip_pixel = False
-        try:
-            with open('/proc/meminfo', 'r') as f:
-                for line in f:
-                    if 'MemAvailable' in line:
-                        avail_mb = int(line.split()[1]) / 1024
-                        logger.info(f"Available memory before Pixel model: {avail_mb:.0f}MB")
-                        if avail_mb < 300:
-                            logger.warning(f"Low memory ({avail_mb:.0f}MB free), skipping Pixel model to avoid OOM")
-                            _skip_pixel = True
-                        break
-        except Exception:
-            pass  # Non-Linux or no /proc/meminfo, try loading anyway
+        limit_mb, usage_mb, avail_mb = _get_container_memory()
+        if avail_mb is not None:
+            logger.info(f"Container memory before Pixel: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
+            if avail_mb < 300:
+                logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Pixel model to avoid OOM")
+                _skip_pixel = True
+        else:
+            # Fallback: try /proc/meminfo (won't work in containers but better than nothing)
+            try:
+                with open('/proc/meminfo', 'r') as f:
+                    for line in f:
+                        if 'MemAvailable' in line:
+                            host_avail = int(line.split()[1]) / 1024
+                            logger.info(f"Host memory available: {host_avail:.0f}MB (container limit unknown)")
+                            break
+            except Exception:
+                pass
         
         if _skip_pixel:
             results["models"]["pixel"] = {"error": "Skipped (insufficient memory)"}
