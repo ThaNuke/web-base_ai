@@ -121,10 +121,10 @@ async def startup_event():
     
     logger.info("✓ Backend ready!")
 
-BASE_DIR = Path(__file__).resolve().parent.parent  
-UPLOAD_DIR = Path(__file__).parent / "uploads"
+BASE_DIR = Path(os.getenv("APP_BASE_DIR", str(Path(__file__).resolve().parent)))
+UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
-BACKGROUND_DIR = Path(__file__).parent / "background"
+BACKGROUND_DIR = BASE_DIR / "background"
 BACKGROUND_DIR.mkdir(exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".jpeg", ".jpg", ".png"}

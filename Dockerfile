@@ -32,12 +32,12 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 # Create model directory
 RUN mkdir -p /app/model
 
-# Expose port
+# Expose port (Railway overrides with $PORT)
 EXPOSE 8000
 
 # Download models (if environment variables are provided)
 # Models will be downloaded on container startup if not present
 ENV PYTHONUNBUFFERED=1
 
-# Run uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run uvicorn - Railway sets $PORT dynamically, must use shell form for variable expansion
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}

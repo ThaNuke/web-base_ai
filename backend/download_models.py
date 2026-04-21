@@ -16,7 +16,7 @@ MODELS = {
     "full_model_xception.pkl": "1cxzQYMMwmVzLnuXoTsRsGi12l9e43Dfg",
 }
 
-MODEL_DIR = Path(__file__).parent.parent / "model"
+MODEL_DIR = Path(os.getenv("APP_BASE_DIR", str(Path(__file__).parent))) / "model"
 
 
 def get_gdrive_id(model_name: str) -> str:
