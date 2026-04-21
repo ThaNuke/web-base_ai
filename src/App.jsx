@@ -3,7 +3,7 @@ import './App.css'
 import { FiShield, FiArrowDown, FiLock, FiTarget, FiUpload, FiX, FiBarChart2, FiChevronDown } from 'react-icons/fi'
 import { BiChevronRight } from 'react-icons/bi'
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://web-production-0d53c.up.railway.app'
+const API_URL = import.meta.env.VITE_API_URL || 'https://web-baseai-production.up.railway.app'
 
 const heroImages = [
   `${API_URL}/background/5501.jpg`,
