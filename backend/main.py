@@ -10,6 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 import pickle
+import gc
+import sys
+from contextlib import contextmanager
 import numpy as np
 from PIL import Image, ImageChops, ImageEnhance
 import uvicorn
@@ -88,6 +91,30 @@ def register_cuda_cpu_mappings():
         torch.serialization.default_restore_location = lambda storage, loc: storage.cpu()
 
 register_cuda_cpu_mappings()
+
+@contextmanager
+def _patch_main_for_torch_load():
+    """Temporarily patch sys.modules['__main__'] so torch.load resolves model classes defined in this module."""
+    original = sys.modules.get('__main__')
+    try:
+        sys.modules['__main__'] = sys.modules[__name__]
+        yield
+    finally:
+        if original is not None:
+            sys.modules['__main__'] = original
+
+def safe_torch_load(filepath):
+    """Load a PyTorch checkpoint with __main__ module patching.
+    
+    Model .pkl files were saved from __main__ context, but under uvicorn
+    __main__ points to uvicorn's module. This patches it so torch.load
+    can resolve ELRes, FreqResNet, PixelRes, etc.
+    torch.load is much more memory-efficient than pickle for PyTorch models.
+    """
+    if not TORCH_AVAILABLE:
+        return safe_pickle_load(filepath)
+    with _patch_main_for_torch_load():
+        return torch.load(filepath, map_location=torch.device('cpu'), weights_only=False)
 
 app = FastAPI(title="TruPic API", version="1.0.0")
 
@@ -380,37 +407,33 @@ def load_model() -> object:
         if not MODEL_PATH.exists():
             raise FileNotFoundError(f"ไม่พบไฟล์โมเดลที่ {MODEL_PATH}")
 
-        file_ext = MODEL_PATH.suffix.lower()
-        if file_ext != ".pkl":
-            raise ValueError(f"ไม่รองรับนามสกุล {file_ext} (รองรับเฉพาะ .pkl)")
-        
         if not TORCH_AVAILABLE:
             raise RuntimeError("ต้องติดตั้ง torch และ torchvision เพื่อโหลด model")
         
         try:
+            raw = safe_torch_load(MODEL_PATH)
+        except Exception as e:
+            logger.warning(f"safe_torch_load failed for ELA: {e}, trying safe_pickle_load...")
             raw = safe_pickle_load(MODEL_PATH)
-        except ModuleNotFoundError as e:
-            logger.error(f"Pickle load failed ({e}): torch modules not available")
-            raise RuntimeError(f"ไม่สามารถโหลด model: {e}")
         
         logger.info(f"โหลด .pkl ไฟล์สำเร็จ - keys: {list(raw.keys())}")
         logger.info(f"Training performance: {raw.get('performance', {})}")
         
         model_config = raw.get("model_config", {})
         model_state_dict = raw.get("model_state_dict")
+        del raw  # Free checkpoint memory
+        gc.collect()
         
         if model_state_dict is None:
             raise ValueError("ไม่พบ model_state_dict ในไฟล์ pickle")
         
         logger.info(f"Model config: {model_config}")
-        logger.info(f"State dict keys (first 10): {list(model_state_dict.keys())[:10]}")
         
         num_classes = model_config.get("num_classes", 2)
         _model = ELRes(num_classes=num_classes)
-        logger.info(f"สร้าง ELRes model สำเร็จ")
-        
         _model.load_state_dict(model_state_dict)
-        logger.info("โหลด trained weights สำเร็จ")
+        del model_state_dict
+        gc.collect()
         
         _model.eval()
         logger.info("โหลด Trained ELRes Model สำเร็จ")
@@ -427,20 +450,16 @@ def load_pixel_model() -> object:
         
         checkpoint = None
         try:
-
-            if TORCH_AVAILABLE:
-                logger.info("Attempting to load Pixel model with torch.load (CPU mapping)...")
-                checkpoint = torch.load(MODEL_PATH, map_location=torch.device('cpu'), weights_only=False)
-                logger.info("Successfully loaded Pixel model with torch.load")
+            logger.info("Loading Pixel model...")
+            checkpoint = safe_torch_load(MODEL_PATH)
+            logger.info("Successfully loaded Pixel model")
         except Exception as e:
-            logger.warning(f"torch.load failed for Pixel: {e}")
-
+            logger.warning(f"safe_torch_load failed for Pixel: {e}")
             try:
-                logger.info("Attempting to load Pixel model with safe_pickle_load...")
                 checkpoint = safe_pickle_load(MODEL_PATH)
-                logger.info("Successfully loaded Pixel model with safe_pickle_load")
+                logger.info("Loaded Pixel model with safe_pickle_load fallback")
             except Exception as e2:
-                logger.error(f"Both torch.load and safe_pickle_load failed for Pixel: {e2}")
+                logger.error(f"All load methods failed for Pixel: {e2}")
                 return None
         
         if checkpoint is None:
@@ -450,12 +469,14 @@ def load_pixel_model() -> object:
         try:
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 state_dict = checkpoint['model_state_dict']
-
+                del checkpoint
                 if TORCH_AVAILABLE:
                     state_dict = {k: v.cpu() if isinstance(v, torch.Tensor) else v
                                  for k, v in state_dict.items()}
                 model = PixelRes(num_classes=2)
                 model.load_state_dict(state_dict, strict=False)
+                del state_dict
+                gc.collect()
                 model.eval()
                 _pixel_model = model
                 logger.info("Successfully loaded Pixel model from state_dict")
@@ -473,11 +494,14 @@ def load_pixel_model() -> object:
                 try:
                     if hasattr(checkpoint, 'state_dict'):
                         raw_sd = checkpoint.state_dict()
+                        del checkpoint
                         if TORCH_AVAILABLE:
                             raw_sd = {k: v.cpu() if isinstance(v, torch.Tensor) else v
                                       for k, v in raw_sd.items()}
                         model = PixelRes(num_classes=2)
                         missing, unexpected = model.load_state_dict(raw_sd, strict=False)
+                        del raw_sd
+                        gc.collect()
                         logger.info(f"Remapped ELRes → PixelRes | missing={len(missing)}, unexpected={len(unexpected)}")
                         model.eval()
                         _pixel_model = model
@@ -508,27 +532,17 @@ def load_freq_model() -> object:
             return None
         
         checkpoint = None
-        if TORCH_AVAILABLE:
-            try:
-
-                logger.info("Attempting to load Frequency model with torch.load (CPU mapping)...")
-                checkpoint = torch.load(MODEL_PATH, map_location=torch.device('cpu'), weights_only=False)
-                logger.info("Successfully loaded Frequency model with torch.load")
-            except Exception as e:
-                logger.warning(f"torch.load failed for Frequency: {e}")
-
-                try:
-                    logger.info("Attempting to load Frequency model with safe_pickle_load...")
-                    checkpoint = safe_pickle_load(MODEL_PATH)
-                    logger.info("Successfully loaded Frequency model with safe_pickle_load")
-                except Exception as e2:
-                    logger.error(f"Both torch.load and safe_pickle_load failed for Frequency: {e2}")
-                    return None
-        else:
+        try:
+            logger.info("Loading Frequency model...")
+            checkpoint = safe_torch_load(MODEL_PATH)
+            logger.info("Successfully loaded Frequency model")
+        except Exception as e:
+            logger.warning(f"safe_torch_load failed for Frequency: {e}")
             try:
                 checkpoint = safe_pickle_load(MODEL_PATH)
-            except Exception as e:
-                logger.error(f"Failed to load Frequency model: {e}")
+                logger.info("Loaded Frequency model with safe_pickle_load fallback")
+            except Exception as e2:
+                logger.error(f"All load methods failed for Frequency: {e2}")
                 return None
         
         if checkpoint is None:
@@ -536,20 +550,20 @@ def load_freq_model() -> object:
             return None
         
         try:
-
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 state_dict = checkpoint['model_state_dict']
-
+                del checkpoint
                 if TORCH_AVAILABLE:
                     state_dict = {k: v.cpu() if isinstance(v, torch.Tensor) else v 
                                  for k, v in state_dict.items()}
                 model = FreqResNet(num_classes=2)
                 model.load_state_dict(state_dict, strict=False)
+                del state_dict
+                gc.collect()
                 model.eval()
                 _freq_model = model
                 logger.info("Successfully loaded Frequency model from state_dict")
             else:
-
                 _freq_model = checkpoint
                 if hasattr(checkpoint, 'cpu'):
                     checkpoint.cpu()
@@ -571,12 +585,15 @@ def load_xception_model() -> object:
             return None
         
         try:
-            checkpoint = safe_pickle_load(MODEL_PATH)
+            checkpoint = safe_torch_load(MODEL_PATH)
             
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 state_dict = checkpoint['model_state_dict']
+                del checkpoint
                 model = XceptionBinary(pretrained=False)
                 model.load_state_dict(state_dict, strict=False)
+                del state_dict
+                gc.collect()
                 model.eval()
                 _xception_model = model
             else:

@@ -6,17 +6,17 @@ import { BiChevronRight } from 'react-icons/bi'
 const API_URL = import.meta.env.VITE_API_URL || 'https://web-baseai-production.up.railway.app'
 
 const heroImages = [
-  `${API_URL}/background/5501.jpg`,
-  `${API_URL}/background/5502.jpg`,
-  `${API_URL}/background/5503.jpg`,
-  `${API_URL}/background/5504.jpg`,
-  `${API_URL}/background/5505.jpg`,
-  `${API_URL}/background/5506.jpg`,
-  `${API_URL}/background/5507.jpg`,
-  `${API_URL}/background/5508.jpg`,
-  `${API_URL}/background/5509.jpg`,
-  `${API_URL}/background/5510.jpg`,
-  `${API_URL}/background/5511.jpg`,
+  '/background/5501.jpg',
+  '/background/5502.jpg',
+  '/background/5503.jpg',
+  '/background/5504.jpg',
+  '/background/5505.jpg',
+  '/background/5506.jpg',
+  '/background/5507.jpg',
+  '/background/5508.jpg',
+  '/background/5509.jpg',
+  '/background/5510.jpg',
+  '/background/5511.jpg',
 ]
 
 function App() {
