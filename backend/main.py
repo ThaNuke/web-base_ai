@@ -105,21 +105,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup event - simplified
+# Startup event - non-blocking model download
 @app.on_event("startup")
 async def startup_event():
+    import threading
     logger.info("🚀 Starting backend server...")
+    logger.info(f"Python working directory: {os.getcwd()}")
+    logger.info(f"TORCH_AVAILABLE: {TORCH_AVAILABLE}")
+    logger.info(f"CV2_AVAILABLE: {CV2_AVAILABLE}")
+    logger.info(f"PORT env: {os.getenv('PORT', 'not set')}")
     
-    # Auto-download models if they don't exist
+    # Download models in background thread to avoid blocking startup
     if MODELS_DOWNLOAD_AVAILABLE:
-        try:
-            logger.info("Checking for model files...")
-            ensure_models_exist()
-            logger.info("✓ Models available!")
-        except Exception as e:
-            logger.warning(f"Model download check failed: {e}")
+        def download_in_background():
+            try:
+                logger.info("Background: Checking for model files...")
+                ensure_models_exist()
+                logger.info("Background: ✓ Models available!")
+            except Exception as e:
+                logger.warning(f"Background: Model download failed: {e}")
+        
+        thread = threading.Thread(target=download_in_background, daemon=True)
+        thread.start()
+        logger.info("Model download started in background thread")
     
-    logger.info("✓ Backend ready!")
+    logger.info("✓ Backend ready (accepting requests)!")
 
 BASE_DIR = Path(os.getenv("APP_BASE_DIR", str(Path(__file__).resolve().parent)))
 UPLOAD_DIR = BASE_DIR / "uploads"
