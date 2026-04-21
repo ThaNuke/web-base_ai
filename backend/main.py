@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 import os
 import random
@@ -91,9 +91,10 @@ register_cuda_cpu_mappings()
 
 app = FastAPI(title="TruPic API", version="1.0.0")
 
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=".*",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
