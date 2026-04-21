@@ -410,11 +410,7 @@ def load_model() -> object:
         if not TORCH_AVAILABLE:
             raise RuntimeError("ต้องติดตั้ง torch และ torchvision เพื่อโหลด model")
         
-        try:
-            raw = safe_torch_load(MODEL_PATH)
-        except Exception as e:
-            logger.warning(f"safe_torch_load failed for ELA: {e}, trying safe_pickle_load...")
-            raw = safe_pickle_load(MODEL_PATH)
+        raw = safe_pickle_load(MODEL_PATH)
         
         logger.info(f"โหลด .pkl ไฟล์สำเร็จ - keys: {list(raw.keys())}")
         logger.info(f"Training performance: {raw.get('performance', {})}")
@@ -451,16 +447,11 @@ def load_pixel_model() -> object:
         checkpoint = None
         try:
             logger.info("Loading Pixel model...")
-            checkpoint = safe_torch_load(MODEL_PATH)
+            checkpoint = safe_pickle_load(MODEL_PATH)
             logger.info("Successfully loaded Pixel model")
         except Exception as e:
-            logger.warning(f"safe_torch_load failed for Pixel: {e}")
-            try:
-                checkpoint = safe_pickle_load(MODEL_PATH)
-                logger.info("Loaded Pixel model with safe_pickle_load fallback")
-            except Exception as e2:
-                logger.error(f"All load methods failed for Pixel: {e2}")
-                return None
+            logger.error(f"Failed to load Pixel model: {e}")
+            return None
         
         if checkpoint is None:
             logger.warning("Pixel model checkpoint is None")
@@ -534,16 +525,11 @@ def load_freq_model() -> object:
         checkpoint = None
         try:
             logger.info("Loading Frequency model...")
-            checkpoint = safe_torch_load(MODEL_PATH)
+            checkpoint = safe_pickle_load(MODEL_PATH)
             logger.info("Successfully loaded Frequency model")
         except Exception as e:
-            logger.warning(f"safe_torch_load failed for Frequency: {e}")
-            try:
-                checkpoint = safe_pickle_load(MODEL_PATH)
-                logger.info("Loaded Frequency model with safe_pickle_load fallback")
-            except Exception as e2:
-                logger.error(f"All load methods failed for Frequency: {e2}")
-                return None
+            logger.error(f"Failed to load Frequency model: {e}")
+            return None
         
         if checkpoint is None:
             logger.warning("Frequency model checkpoint is None")
@@ -585,7 +571,7 @@ def load_xception_model() -> object:
             return None
         
         try:
-            checkpoint = safe_torch_load(MODEL_PATH)
+            checkpoint = safe_pickle_load(MODEL_PATH)
             
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 state_dict = checkpoint['model_state_dict']
@@ -706,36 +692,6 @@ async def analyze_image(image_path: str) -> dict:
             results["models"]["xception"] = {"error": str(e)}
         
         try:
-            model = load_pixel_model()
-            if model is not None:
-                pix_img = convert_to_pixel_map_from_pil(image)
-                
-                t_pix = T.Compose([
-                    T.Resize((224, 224)),
-                    T.ToTensor(),
-                    T.Normalize([0.5]*4, [0.5]*4)
-                ])
-                
-                pix_tensor = t_pix(pix_img).unsqueeze(0).to(device)
-                rgb_tensor = t_rgb(image).unsqueeze(0).to(device)
-                
-                with torch.no_grad():
-                    out = model(pix_tensor, rgb_tensor)
-                    proba = torch.softmax(out, dim=1)[0].cpu().numpy()
-                
-                pixel_ai_prob = float(proba[1]) * 100.0
-                results["models"]["pixel"] = {
-                    "name": "PixelRes (4-channel)",
-                    "isAI": bool(proba[1] >= 0.5),
-                    "confidence": pixel_ai_prob,
-                    "real_prob": float(proba[0]) * 100.0
-                }
-                logger.info(f"Pixel: {pixel_ai_prob:.2f}% AI")
-        except Exception as e:
-            logger.error(f"Pixel model error: {e}")
-            results["models"]["pixel"] = {"error": str(e)}
-        
-        try:
             model = load_freq_model()
             if model is not None:
                 freq_img = fft_feature_map(image)
@@ -763,6 +719,55 @@ async def analyze_image(image_path: str) -> dict:
         except Exception as e:
             logger.error(f"Frequency model error: {e}")
             results["models"]["frequency"] = {"error": str(e)}
+        
+        # Pixel is loaded last (largest model, lowest weight 0.16)
+        # Check available memory to avoid OOM kill
+        _skip_pixel = False
+        try:
+            with open('/proc/meminfo', 'r') as f:
+                for line in f:
+                    if 'MemAvailable' in line:
+                        avail_mb = int(line.split()[1]) / 1024
+                        logger.info(f"Available memory before Pixel model: {avail_mb:.0f}MB")
+                        if avail_mb < 300:
+                            logger.warning(f"Low memory ({avail_mb:.0f}MB free), skipping Pixel model to avoid OOM")
+                            _skip_pixel = True
+                        break
+        except Exception:
+            pass  # Non-Linux or no /proc/meminfo, try loading anyway
+        
+        if _skip_pixel:
+            results["models"]["pixel"] = {"error": "Skipped (insufficient memory)"}
+        else:
+            try:
+                model = load_pixel_model()
+                if model is not None:
+                    pix_img = convert_to_pixel_map_from_pil(image)
+                    
+                    t_pix = T.Compose([
+                        T.Resize((224, 224)),
+                        T.ToTensor(),
+                        T.Normalize([0.5]*4, [0.5]*4)
+                    ])
+                    
+                    pix_tensor = t_pix(pix_img).unsqueeze(0).to(device)
+                    rgb_tensor = t_rgb(image).unsqueeze(0).to(device)
+                    
+                    with torch.no_grad():
+                        out = model(pix_tensor, rgb_tensor)
+                        proba = torch.softmax(out, dim=1)[0].cpu().numpy()
+                    
+                    pixel_ai_prob = float(proba[1]) * 100.0
+                    results["models"]["pixel"] = {
+                        "name": "PixelRes (4-channel)",
+                        "isAI": bool(proba[1] >= 0.5),
+                        "confidence": pixel_ai_prob,
+                        "real_prob": float(proba[0]) * 100.0
+                    }
+                    logger.info(f"Pixel: {pixel_ai_prob:.2f}% AI")
+            except Exception as e:
+                logger.error(f"Pixel model error: {e}")
+                results["models"]["pixel"] = {"error": str(e)}
         
         logger.info(f"Attempting ensemble method: {ENSEMBLE_METHOD}")
         
