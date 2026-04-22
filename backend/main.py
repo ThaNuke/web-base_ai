@@ -109,12 +109,18 @@ def safe_torch_load(filepath):
     Model .pkl files were saved from __main__ context, but under uvicorn
     __main__ points to uvicorn's module. This patches it so torch.load
     can resolve ELRes, FreqResNet, PixelRes, etc.
-    torch.load is much more memory-efficient than pickle for PyTorch models.
+    
+    Falls back to safe_pickle_load if the file was saved with pickle.dump()
+    instead of torch.save() (torch.load expects a magic number header).
     """
     if not TORCH_AVAILABLE:
         return safe_pickle_load(filepath)
     with _patch_main_for_torch_load():
-        return torch.load(filepath, map_location=torch.device('cpu'), weights_only=False)
+        try:
+            return torch.load(filepath, map_location=torch.device('cpu'), weights_only=False)
+        except Exception as e:
+            logger.info(f"torch.load failed ({e}), falling back to pickle.load")
+            return safe_pickle_load(filepath)
 
 app = FastAPI(title="TruPic API", version="1.0.0")
 
