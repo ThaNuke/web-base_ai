@@ -154,6 +154,20 @@ async def startup_event():
     logger.info(f"TORCH_AVAILABLE: {TORCH_AVAILABLE}")
     logger.info(f"CV2_AVAILABLE: {CV2_AVAILABLE}")
     logger.info(f"PORT env: {os.getenv('PORT', 'not set')}")
+
+    # Reduce peak memory usage in small containers by limiting CPU thread pools.
+    # This helps avoid transient allocation spikes that can trigger OOM kills.
+    try:
+        os.environ.setdefault("OMP_NUM_THREADS", "1")
+        os.environ.setdefault("MKL_NUM_THREADS", "1")
+        os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+        os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+        os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+        if TORCH_AVAILABLE:
+            torch.set_num_threads(1)
+            torch.set_num_interop_threads(1)
+    except Exception:
+        pass
     
     # Download models in background thread to avoid blocking startup
     if MODELS_DOWNLOAD_AVAILABLE:
@@ -839,35 +853,48 @@ async def analyze_image(image_path: str) -> dict:
                 pass
             _unload_model('xception')
             _log_memory('after Xception unload')
-        
-            try:
-                model = load_freq_model()
-                if model is not None:
-                    freq_img = fft_feature_map(image)
-                    
-                    t_freq = T.Compose([
-                        T.Resize((224, 224)),
-                        T.ToTensor(),
-                        T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-                    ])
-                    
-                    freq_tensor = t_freq(freq_img).unsqueeze(0).to(device)
-                    
-                    with torch.no_grad():
-                        out = model(freq_tensor)
-                        proba = torch.softmax(out, dim=1)[0].cpu().numpy()
-                    
-                    freq_ai_prob = float(proba[1]) * 100.0
-                    results["models"]["frequency"] = {
-                        "name": "FreqResNet (FFT)",
-                        "isAI": bool(proba[1] >= 0.5),
-                        "confidence": freq_ai_prob,
-                        "real_prob": float(proba[0]) * 100.0
-                    }
-                    logger.info(f"Frequency: {freq_ai_prob:.2f}% AI")
-            except Exception as e:
-                logger.error(f"Frequency model error: {e}")
-                results["models"]["frequency"] = {"error": str(e)}
+
+            # Frequency can still spike memory on load (some .pkl contain full nn.Module),
+            # so we guard it in small containers.
+            _skip_frequency = False
+            limit_mb, usage_mb, avail_mb = _get_container_memory()
+            if avail_mb is not None:
+                logger.info(f"Container memory before Frequency: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
+                if avail_mb < 500:
+                    logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Frequency model to avoid OOM")
+                    _skip_frequency = True
+
+            if _skip_frequency:
+                results["models"]["frequency"] = {"error": "Skipped (insufficient memory)"}
+            else:
+                try:
+                    model = load_freq_model()
+                    if model is not None:
+                        freq_img = fft_feature_map(image)
+                        
+                        t_freq = T.Compose([
+                            T.Resize((224, 224)),
+                            T.ToTensor(),
+                            T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+                        ])
+                        
+                        freq_tensor = t_freq(freq_img).unsqueeze(0).to(device)
+                        
+                        with torch.no_grad():
+                            out = model(freq_tensor)
+                            proba = torch.softmax(out, dim=1)[0].cpu().numpy()
+                        
+                        freq_ai_prob = float(proba[1]) * 100.0
+                        results["models"]["frequency"] = {
+                            "name": "FreqResNet (FFT)",
+                            "isAI": bool(proba[1] >= 0.5),
+                            "confidence": freq_ai_prob,
+                            "real_prob": float(proba[0]) * 100.0
+                        }
+                        logger.info(f"Frequency: {freq_ai_prob:.2f}% AI")
+                except Exception as e:
+                    logger.error(f"Frequency model error: {e}")
+                    results["models"]["frequency"] = {"error": str(e)}
         
             # Drop ALL references from Frequency step before loading next model
             model = freq_img = None
