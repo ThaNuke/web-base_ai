@@ -117,10 +117,17 @@ def safe_torch_load(filepath):
         return safe_pickle_load(filepath)
     with _patch_main_for_torch_load():
         try:
-            return torch.load(filepath, map_location=torch.device('cpu'), weights_only=False)
+            # Prefer weights_only to reduce memory + avoid executing pickled code.
+            # If the file is NOT a torch checkpoint (e.g., pure pickle), this will fail
+            # and we fall back below.
+            return torch.load(filepath, map_location=torch.device('cpu'), weights_only=True)
         except Exception as e:
-            logger.info(f"torch.load failed ({e}), falling back to pickle.load")
-            return safe_pickle_load(filepath)
+            try:
+                # Some checkpoints (or older torch versions) may require full load.
+                return torch.load(filepath, map_location=torch.device('cpu'), weights_only=False)
+            except Exception as e2:
+                logger.info(f"torch.load failed ({e2}), falling back to pickle.load")
+                return safe_pickle_load(filepath)
 
 app = FastAPI(title="TruPic API", version="1.0.0")
 
@@ -189,6 +196,10 @@ _freq_model: Optional[object] = None
 _xception_model: Optional[object] = None
 _stacking_model: Optional[object] = None
 _stacking_checkpoint: Optional[dict] = None
+
+# In small containers, concurrent /api/analyze requests can overlap model loads
+# and spike peak RAM enough to trigger an OOM kill. Serialize analyses by default.
+_analyze_lock = None
 
 def _force_memory_release():
     """Force Python GC + glibc to return freed memory to OS.
@@ -551,13 +562,24 @@ def load_pixel_model() -> object:
                 _pixel_model = model
                 logger.info("Successfully loaded Pixel model from state_dict")
 
-            elif hasattr(checkpoint, '__class__') and checkpoint.__class__.__name__ == 'PixelRes':
-                _pixel_model = checkpoint
-                if hasattr(checkpoint, 'cpu'):
-                    checkpoint.cpu()
-                if hasattr(checkpoint, 'eval'):
-                    checkpoint.eval()
-                logger.info("Loaded Pixel model directly from checkpoint (PixelRes object)")
+            elif TORCH_AVAILABLE and isinstance(checkpoint, nn.Module):
+                # If the checkpoint is a full Module object, strip it down to a state_dict
+                # and rebuild a fresh instance to reduce retained training/serialization baggage.
+                try:
+                    sd = checkpoint.state_dict()
+                    del checkpoint
+                    sd = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in sd.items()}
+                    model = PixelRes(num_classes=2)
+                    model.load_state_dict(sd, strict=False)
+                    del sd
+                    gc.collect()
+                    model.eval()
+                    _pixel_model = model
+                    logger.info("Loaded Pixel model via Module→state_dict rebuild")
+                except Exception as rebuild_err:
+                    logger.warning(f"Pixel Module→state_dict rebuild failed: {rebuild_err}")
+                    _pixel_model = None
+                    return None
 
             elif hasattr(checkpoint, '__class__') and checkpoint.__class__.__name__ == 'ELRes':
                 logger.warning("Pixel checkpoint contains ELRes object; attempting weight remapping into PixelRes...")
@@ -628,13 +650,26 @@ def load_freq_model() -> object:
                 model.eval()
                 _freq_model = model
                 logger.info("Successfully loaded Frequency model from state_dict")
+            elif TORCH_AVAILABLE and isinstance(checkpoint, nn.Module):
+                # Rebuild from state_dict to avoid retaining extra pickled baggage.
+                sd = checkpoint.state_dict()
+                del checkpoint
+                sd = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in sd.items()}
+                model = FreqResNet(num_classes=2)
+                model.load_state_dict(sd, strict=False)
+                del sd
+                gc.collect()
+                model.eval()
+                _freq_model = model
+                logger.info("Loaded Frequency model via Module→state_dict rebuild")
             else:
+                # Unknown format; keep as-is (best effort)
                 _freq_model = checkpoint
                 if hasattr(checkpoint, 'cpu'):
                     checkpoint.cpu()
                 if hasattr(checkpoint, 'eval'):
                     checkpoint.eval()
-                logger.info("Loaded Frequency model directly from checkpoint")
+                logger.info("Loaded Frequency model directly from checkpoint (unknown format)")
         except Exception as e:
             logger.error(f"Error processing Frequency model checkpoint: {e}")
             return None
@@ -658,6 +693,16 @@ def load_xception_model() -> object:
                 model = XceptionBinary(pretrained=False)
                 model.load_state_dict(state_dict, strict=False)
                 del state_dict
+                gc.collect()
+                model.eval()
+                _xception_model = model
+            elif TORCH_AVAILABLE and isinstance(checkpoint, nn.Module):
+                sd = checkpoint.state_dict()
+                del checkpoint
+                sd = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in sd.items()}
+                model = XceptionBinary(pretrained=False)
+                model.load_state_dict(sd, strict=False)
+                del sd
                 gc.collect()
                 model.eval()
                 _xception_model = model
@@ -707,244 +752,309 @@ async def analyze_image(image_path: str) -> dict:
     try:
         if not TORCH_AVAILABLE:
             raise RuntimeError("ต้องติดตั้ง torch เพื่อใช้งาน model")
+
+        # Lazily create the lock (avoids event-loop issues at import time)
+        global _analyze_lock
+        if _analyze_lock is None:
+            import asyncio
+            _analyze_lock = asyncio.Lock()
+        async with _analyze_lock:
         
-        image = Image.open(image_path).convert('RGB')
-        device = torch.device("cpu")
+            image = Image.open(image_path).convert('RGB')
+            device = torch.device("cpu")
         
-        t_rgb = T.Compose([
-            T.Resize((224, 224)),
-            T.ToTensor(),
-            T.Normalize([0.5]*3, [0.5]*3)
-        ])
+            t_rgb = T.Compose([
+                T.Resize((224, 224)),
+                T.ToTensor(),
+                T.Normalize([0.5]*3, [0.5]*3)
+            ])
         
-        t_xcep = T.Compose([
-            T.Resize((150, 150)),
-            T.ToTensor(),
-            T.Normalize([0.5]*3, [0.5]*3)
-        ])
+            t_xcep = T.Compose([
+                T.Resize((150, 150)),
+                T.ToTensor(),
+                T.Normalize([0.5]*3, [0.5]*3)
+            ])
         
-        results = {
-            "models": {},
-            "ensemble": {}
-        }
-        
-        try:
-            model = load_model()
-            ela_img = convert_to_ela_image(image)
-            ela_tensor = t_rgb(ela_img).unsqueeze(0).to(device)
-            rgb_tensor = t_rgb(image).unsqueeze(0).to(device)
-            
-            with torch.no_grad():
-                out = model(ela_tensor, rgb_tensor)
-                proba = torch.softmax(out, dim=1)[0].cpu().numpy()
-            
-            ela_ai_prob = float(proba[1]) * 100.0
-            results["models"]["ela"] = {
-                "name": "ELRes (2-stream)",
-                "isAI": bool(proba[1] >= 0.5),
-                "confidence": ela_ai_prob,
-                "real_prob": float(proba[0]) * 100.0
+            results = {
+                "models": {},
+                "ensemble": {}
             }
-            logger.info(f"ELA: {ela_ai_prob:.2f}% AI")
-        except Exception as e:
-            logger.error(f"ELA model error: {e}")
-            results["models"]["ela"] = {"error": str(e)}
         
-        # Drop ALL references from ELA step before loading next model
-        model = ela_img = None
-        try:
-            del ela_tensor, rgb_tensor, out, proba
-        except NameError:
-            pass
-        _unload_model('ela')
-        _log_memory('after ELA unload')
-        
-        try:
-            model = load_xception_model()
-            if model is not None:
-                xcep_tensor = t_xcep(image).unsqueeze(0).to(device)
-                with torch.no_grad():
-                    logits = model(xcep_tensor)
-                    p = torch.sigmoid(logits).item()
-                
-                xcep_ai_prob = (1 - p) * 100.0
-                results["models"]["xception"] = {
-                    "name": "Xception",
-                    "isAI": bool(p < 0.5),
-                    "confidence": xcep_ai_prob,
-                    "real_prob": p * 100.0
-                }
-                logger.info(f"Xception: {xcep_ai_prob:.2f}% AI")
-        except Exception as e:
-            logger.error(f"Xception model error: {e}")
-            results["models"]["xception"] = {"error": str(e)}
-        
-        # Drop ALL references from Xception step before loading next model
-        model = None
-        try:
-            del xcep_tensor
-        except NameError:
-            pass
-        _unload_model('xception')
-        _log_memory('after Xception unload')
-        
-        try:
-            model = load_freq_model()
-            if model is not None:
-                freq_img = fft_feature_map(image)
-                
-                t_freq = T.Compose([
-                    T.Resize((224, 224)),
-                    T.ToTensor(),
-                    T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-                ])
-                
-                freq_tensor = t_freq(freq_img).unsqueeze(0).to(device)
+            try:
+                model = load_model()
+                ela_img = convert_to_ela_image(image)
+                ela_tensor = t_rgb(ela_img).unsqueeze(0).to(device)
+                rgb_tensor = t_rgb(image).unsqueeze(0).to(device)
                 
                 with torch.no_grad():
-                    out = model(freq_tensor)
+                    out = model(ela_tensor, rgb_tensor)
                     proba = torch.softmax(out, dim=1)[0].cpu().numpy()
                 
-                freq_ai_prob = float(proba[1]) * 100.0
-                results["models"]["frequency"] = {
-                    "name": "FreqResNet (FFT)",
+                ela_ai_prob = float(proba[1]) * 100.0
+                results["models"]["ela"] = {
+                    "name": "ELRes (2-stream)",
                     "isAI": bool(proba[1] >= 0.5),
-                    "confidence": freq_ai_prob,
+                    "confidence": ela_ai_prob,
                     "real_prob": float(proba[0]) * 100.0
                 }
-                logger.info(f"Frequency: {freq_ai_prob:.2f}% AI")
-        except Exception as e:
-            logger.error(f"Frequency model error: {e}")
-            results["models"]["frequency"] = {"error": str(e)}
+                logger.info(f"ELA: {ela_ai_prob:.2f}% AI")
+            except Exception as e:
+                logger.error(f"ELA model error: {e}")
+                results["models"]["ela"] = {"error": str(e)}
         
-        # Drop ALL references from Frequency step before loading next model
-        model = freq_img = None
-        try:
-            del freq_tensor, out, proba
-        except NameError:
-            pass
-        _unload_model('frequency')
-        _log_memory('after Frequency unload')
-        
-        # Pixel is loaded last (largest model, lowest weight 0.16)
-        # Check available memory to avoid OOM kill
-        _skip_pixel = False
-        limit_mb, usage_mb, avail_mb = _get_container_memory()
-        if avail_mb is not None:
-            logger.info(f"Container memory before Pixel: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
-            if avail_mb < 300:
-                logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Pixel model to avoid OOM")
-                _skip_pixel = True
-        else:
-            # Fallback: try /proc/meminfo (won't work in containers but better than nothing)
+            # Drop ALL references from ELA step before loading next model
+            model = ela_img = None
             try:
-                with open('/proc/meminfo', 'r') as f:
-                    for line in f:
-                        if 'MemAvailable' in line:
-                            host_avail = int(line.split()[1]) / 1024
-                            logger.info(f"Host memory available: {host_avail:.0f}MB (container limit unknown)")
-                            break
-            except Exception:
+                del ela_tensor, rgb_tensor, out, proba
+            except NameError:
                 pass
+            _unload_model('ela')
+            _log_memory('after ELA unload')
         
-        if _skip_pixel:
-            results["models"]["pixel"] = {"error": "Skipped (insufficient memory)"}
-        else:
             try:
-                model = load_pixel_model()
+                model = load_xception_model()
                 if model is not None:
-                    pix_img = convert_to_pixel_map_from_pil(image)
+                    xcep_tensor = t_xcep(image).unsqueeze(0).to(device)
+                    with torch.no_grad():
+                        logits = model(xcep_tensor)
+                        p = torch.sigmoid(logits).item()
                     
-                    t_pix = T.Compose([
+                    xcep_ai_prob = (1 - p) * 100.0
+                    results["models"]["xception"] = {
+                        "name": "Xception",
+                        "isAI": bool(p < 0.5),
+                        "confidence": xcep_ai_prob,
+                        "real_prob": p * 100.0
+                    }
+                    logger.info(f"Xception: {xcep_ai_prob:.2f}% AI")
+            except Exception as e:
+                logger.error(f"Xception model error: {e}")
+                results["models"]["xception"] = {"error": str(e)}
+        
+            # Drop ALL references from Xception step before loading next model
+            model = None
+            try:
+                del xcep_tensor
+            except NameError:
+                pass
+            _unload_model('xception')
+            _log_memory('after Xception unload')
+        
+            try:
+                model = load_freq_model()
+                if model is not None:
+                    freq_img = fft_feature_map(image)
+                    
+                    t_freq = T.Compose([
                         T.Resize((224, 224)),
                         T.ToTensor(),
-                        T.Normalize([0.5]*4, [0.5]*4)
+                        T.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
                     ])
                     
-                    pix_tensor = t_pix(pix_img).unsqueeze(0).to(device)
-                    rgb_tensor = t_rgb(image).unsqueeze(0).to(device)
+                    freq_tensor = t_freq(freq_img).unsqueeze(0).to(device)
                     
                     with torch.no_grad():
-                        out = model(pix_tensor, rgb_tensor)
+                        out = model(freq_tensor)
                         proba = torch.softmax(out, dim=1)[0].cpu().numpy()
                     
-                    pixel_ai_prob = float(proba[1]) * 100.0
-                    results["models"]["pixel"] = {
-                        "name": "PixelRes (4-channel)",
+                    freq_ai_prob = float(proba[1]) * 100.0
+                    results["models"]["frequency"] = {
+                        "name": "FreqResNet (FFT)",
                         "isAI": bool(proba[1] >= 0.5),
-                        "confidence": pixel_ai_prob,
+                        "confidence": freq_ai_prob,
                         "real_prob": float(proba[0]) * 100.0
                     }
-                    logger.info(f"Pixel: {pixel_ai_prob:.2f}% AI")
+                    logger.info(f"Frequency: {freq_ai_prob:.2f}% AI")
             except Exception as e:
-                logger.error(f"Pixel model error: {e}")
-                results["models"]["pixel"] = {"error": str(e)}
+                logger.error(f"Frequency model error: {e}")
+                results["models"]["frequency"] = {"error": str(e)}
         
-        logger.info(f"Attempting ensemble method: {ENSEMBLE_METHOD}")
+            # Drop ALL references from Frequency step before loading next model
+            model = freq_img = None
+            try:
+                del freq_tensor, out, proba
+            except NameError:
+                pass
+            _unload_model('frequency')
+            _log_memory('after Frequency unload')
         
-        model_predictions = {}
-        model_results_for_ensemble = {}
-        
-        for model_name in ["ela", "pixel", "frequency", "xception"]:
-            if model_name in results["models"] and "error" not in results["models"][model_name]:
-                confidence = results["models"][model_name]["confidence"]
-                normalized_confidence = confidence / 100.0
-                model_predictions[model_name] = normalized_confidence
-                model_results_for_ensemble[model_name] = {
-                    "weight": MODEL_WEIGHTS.get(model_name, 0.25),
-                    "confidence": confidence,
-                    "weighted_score": MODEL_WEIGHTS.get(model_name, 0.25) * confidence
-                }
-        
-        if ENSEMBLE_METHOD == "weighted_average":
-            logger.info("Using weighted average ensemble (weighted voting) as primary ensemble")
-            
-            weighted_sum = 0.0
-            total_weight = 0.0
-            weighted_votes = 0.0
-            
-            for model_name, model_result in results["models"].items():
-                if "error" not in model_result:
-                    weight = MODEL_WEIGHTS.get(model_name, 0.25)
-                    confidence = model_result["confidence"]
-                    
-                    weighted_sum += weight * confidence
-                    total_weight += weight
-                    
-                    if confidence >= 50:
-                        weighted_votes += weight
-            
-            if total_weight > 0:
-                boosting_ensemble_probability = weighted_sum / total_weight
-                weighted_vote_strength = weighted_votes / total_weight
-                total_models = len([m for m in results["models"].values() if "error" not in m])
-                count_ai_votes = len([
-                    m for m in results["models"].values()
-                    if "error" not in m and m["confidence"] >= 50
-                ])
-                count_majority = count_ai_votes >= max(2, round(total_models * 0.75))  
-                is_ai_generated = (
-                    (boosting_ensemble_probability >= 70.0 and weighted_vote_strength >= 0.5)
-                    or count_majority
-                )
-
-                results["ensemble"] = {
-                    "isAIGenerated": bool(is_ai_generated),
-                    "confidence": float(boosting_ensemble_probability),
-                    "confidence_rounded": round(float(boosting_ensemble_probability), 2),
-                    "votes": f"{weighted_votes:.2f}/{total_weight:.2f} (weighted majority vote)",
-                    "probability": float(boosting_ensemble_probability / 100.0),
-                    "ensemble_type": "Weighted Average + Majority Vote Ensemble",
-                    "weighted_details": model_results_for_ensemble,
-                    "weighted_vote_strength": float(weighted_vote_strength)
-                }
-                logger.info(f"Weighted average: {boosting_ensemble_probability:.2f}% AI | vote_strength: {weighted_vote_strength:.2f} | isAI: {is_ai_generated}")
+            # Pixel is loaded last (largest model, lowest weight 0.16)
+            # Check available memory to avoid OOM kill
+            _skip_pixel = False
+            limit_mb, usage_mb, avail_mb = _get_container_memory()
+            if avail_mb is not None:
+                logger.info(f"Container memory before Pixel: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
+                if avail_mb < 350:
+                    logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Pixel model to avoid OOM")
+                    _skip_pixel = True
             else:
-                logger.warning("Weighted average failed - attempting weight stacking fallback")
-                
+                # Fallback: try /proc/meminfo (won't work in containers but better than nothing)
+                try:
+                    with open('/proc/meminfo', 'r') as f:
+                        for line in f:
+                            if 'MemAvailable' in line:
+                                host_avail = int(line.split()[1]) / 1024
+                                logger.info(f"Host memory available: {host_avail:.0f}MB (container limit unknown)")
+                                break
+                except Exception:
+                    pass
+            
+            if _skip_pixel:
+                results["models"]["pixel"] = {"error": "Skipped (insufficient memory)"}
+            else:
+                try:
+                    model = load_pixel_model()
+                    if model is not None:
+                        pix_img = convert_to_pixel_map_from_pil(image)
+                        
+                        t_pix = T.Compose([
+                            T.Resize((224, 224)),
+                            T.ToTensor(),
+                            T.Normalize([0.5]*4, [0.5]*4)
+                        ])
+                        
+                        pix_tensor = t_pix(pix_img).unsqueeze(0).to(device)
+                        rgb_tensor = t_rgb(image).unsqueeze(0).to(device)
+                        
+                        with torch.no_grad():
+                            out = model(pix_tensor, rgb_tensor)
+                            proba = torch.softmax(out, dim=1)[0].cpu().numpy()
+                        
+                        pixel_ai_prob = float(proba[1]) * 100.0
+                        results["models"]["pixel"] = {
+                            "name": "PixelRes (4-channel)",
+                            "isAI": bool(proba[1] >= 0.5),
+                            "confidence": pixel_ai_prob,
+                            "real_prob": float(proba[0]) * 100.0
+                        }
+                        logger.info(f"Pixel: {pixel_ai_prob:.2f}% AI")
+                except Exception as e:
+                    logger.error(f"Pixel model error: {e}")
+                    results["models"]["pixel"] = {"error": str(e)}
+
+            # Drop ALL references from Pixel step
+            model = pix_img = None
+            try:
+                del pix_tensor, rgb_tensor, out, proba
+            except NameError:
+                pass
+            _unload_model('pixel')
+            _log_memory('after Pixel unload')
+        
+            logger.info(f"Attempting ensemble method: {ENSEMBLE_METHOD}")
+        
+            model_predictions = {}
+            model_results_for_ensemble = {}
+        
+            for model_name in ["ela", "pixel", "frequency", "xception"]:
+                if model_name in results["models"] and "error" not in results["models"][model_name]:
+                    confidence = results["models"][model_name]["confidence"]
+                    normalized_confidence = confidence / 100.0
+                    model_predictions[model_name] = normalized_confidence
+                    model_results_for_ensemble[model_name] = {
+                        "weight": MODEL_WEIGHTS.get(model_name, 0.25),
+                        "confidence": confidence,
+                        "weighted_score": MODEL_WEIGHTS.get(model_name, 0.25) * confidence
+                    }
+        
+            if ENSEMBLE_METHOD == "weighted_average":
+                logger.info("Using weighted average ensemble (weighted voting) as primary ensemble")
+            
+                weighted_sum = 0.0
+                total_weight = 0.0
+                weighted_votes = 0.0
+            
+                for model_name, model_result in results["models"].items():
+                    if "error" not in model_result:
+                        weight = MODEL_WEIGHTS.get(model_name, 0.25)
+                        confidence = model_result["confidence"]
+                        
+                        weighted_sum += weight * confidence
+                        total_weight += weight
+                        
+                        if confidence >= 50:
+                            weighted_votes += weight
+            
+                if total_weight > 0:
+                    boosting_ensemble_probability = weighted_sum / total_weight
+                    weighted_vote_strength = weighted_votes / total_weight
+                    total_models = len([m for m in results["models"].values() if "error" not in m])
+                    count_ai_votes = len([
+                        m for m in results["models"].values()
+                        if "error" not in m and m["confidence"] >= 50
+                    ])
+                    count_majority = count_ai_votes >= max(2, round(total_models * 0.75))  
+                    is_ai_generated = (
+                        (boosting_ensemble_probability >= 70.0 and weighted_vote_strength >= 0.5)
+                        or count_majority
+                    )
+
+                    results["ensemble"] = {
+                        "isAIGenerated": bool(is_ai_generated),
+                        "confidence": float(boosting_ensemble_probability),
+                        "confidence_rounded": round(float(boosting_ensemble_probability), 2),
+                        "votes": f"{weighted_votes:.2f}/{total_weight:.2f} (weighted majority vote)",
+                        "probability": float(boosting_ensemble_probability / 100.0),
+                        "ensemble_type": "Weighted Average + Majority Vote Ensemble",
+                        "weighted_details": model_results_for_ensemble,
+                        "weighted_vote_strength": float(weighted_vote_strength)
+                    }
+                    logger.info(f"Weighted average: {boosting_ensemble_probability:.2f}% AI | vote_strength: {weighted_vote_strength:.2f} | isAI: {is_ai_generated}")
+                else:
+                    logger.warning("Weighted average failed - attempting weight stacking fallback")
+                    
+                    stacking_model, stacking_checkpoint = load_stacking_model()
+                    
+                    if stacking_model is not None and len(model_predictions) >= 3:
+                        stacking_input = np.zeros(4, dtype=np.float32)
+                        stacking_input[0] = model_predictions.get("ela", 0.5)
+                        stacking_input[1] = model_predictions.get("pixel", 0.5)
+                        stacking_input[2] = model_predictions.get("frequency", 0.5)
+                        stacking_input[3] = model_predictions.get("xception", 0.5)
+                        
+                        stacking_input_tensor = torch.from_numpy(stacking_input.reshape(1, -1)).float()
+                        
+                        with torch.no_grad():
+                            stacking_output = stacking_model(stacking_input_tensor)
+                            stacking_probability = float(stacking_output.item())
+                        
+                        stacking_ensemble_probability = stacking_probability * 100.0
+                        weighted_votes = sum([1.0 for conf in model_predictions.values() if conf >= 0.5])
+                        weighted_vote_strength = weighted_votes / len(model_predictions)
+                        
+                        results["ensemble"] = {
+                            "isAIGenerated": bool(stacking_probability >= 0.5),
+                            "confidence": float(stacking_ensemble_probability),
+                            "confidence_rounded": round(float(stacking_ensemble_probability), 2),
+                            "votes": f"{weighted_votes:.1f}/{len(model_predictions):.1f} (weight stacking fallback)",
+                            "probability": float(stacking_probability),
+                            "ensemble_type": "Fallback: Weight Stacking Ensemble (Neural Network Meta-Learner)",
+                            "weighted_vote_strength": float(weighted_vote_strength)
+                        }
+                        logger.info(f"Weight stacking fallback: {stacking_ensemble_probability:.2f}% AI")
+                    else:
+
+                        if "ela" in results["models"] and "error" not in results["models"]["ela"]:
+                            ela_conf = results["models"]["ela"]["confidence"]
+                            results["ensemble"] = {
+                                "isAIGenerated": bool(ela_conf >= 50),
+                                "confidence": ela_conf,
+                                "confidence_rounded": round(ela_conf, 2),
+                                "votes": "1/1 (ELA only - fallback)",
+                                "probability": float(ela_conf / 100.0),
+                                "ensemble_type": "Fallback (ELA only)"
+                            }
+                            logger.info(f"ELA fallback: {ela_conf:.2f}% AI")
+                        else:
+                            raise Exception("All ensemble methods failed")
+        
+            else:
+                logger.info("Using weight stacking (neural network meta-learner) as primary ensemble")
+            
                 stacking_model, stacking_checkpoint = load_stacking_model()
-                
+            
                 if stacking_model is not None and len(model_predictions) >= 3:
+
                     stacking_input = np.zeros(4, dtype=np.float32)
                     stacking_input[0] = model_predictions.get("ela", 0.5)
                     stacking_input[1] = model_predictions.get("pixel", 0.5)
@@ -965,112 +1075,63 @@ async def analyze_image(image_path: str) -> dict:
                         "isAIGenerated": bool(stacking_probability >= 0.5),
                         "confidence": float(stacking_ensemble_probability),
                         "confidence_rounded": round(float(stacking_ensemble_probability), 2),
-                        "votes": f"{weighted_votes:.1f}/{len(model_predictions):.1f} (weight stacking fallback)",
+                        "votes": f"{weighted_votes:.1f}/{len(model_predictions):.1f} (weight stacking)",
                         "probability": float(stacking_probability),
-                        "ensemble_type": "Fallback: Weight Stacking Ensemble (Neural Network Meta-Learner)",
+                        "ensemble_type": "Weight Stacking Ensemble (Neural Network Meta-Learner)",
                         "weighted_vote_strength": float(weighted_vote_strength)
                     }
-                    logger.info(f"Weight stacking fallback: {stacking_ensemble_probability:.2f}% AI")
+                    logger.info(f"Weight stacking: {stacking_ensemble_probability:.2f}% AI")
                 else:
 
-                    if "ela" in results["models"] and "error" not in results["models"]["ela"]:
-                        ela_conf = results["models"]["ela"]["confidence"]
-                        results["ensemble"] = {
-                            "isAIGenerated": bool(ela_conf >= 50),
-                            "confidence": ela_conf,
-                            "confidence_rounded": round(ela_conf, 2),
-                            "votes": "1/1 (ELA only - fallback)",
-                            "probability": float(ela_conf / 100.0),
-                            "ensemble_type": "Fallback (ELA only)"
-                        }
-                        logger.info(f"ELA fallback: {ela_conf:.2f}% AI")
-                    else:
-                        raise Exception("All ensemble methods failed")
-        
-        else:
-            logger.info("Using weight stacking (neural network meta-learner) as primary ensemble")
-            
-            stacking_model, stacking_checkpoint = load_stacking_model()
-            
-            if stacking_model is not None and len(model_predictions) >= 3:
-
-                stacking_input = np.zeros(4, dtype=np.float32)
-                stacking_input[0] = model_predictions.get("ela", 0.5)
-                stacking_input[1] = model_predictions.get("pixel", 0.5)
-                stacking_input[2] = model_predictions.get("frequency", 0.5)
-                stacking_input[3] = model_predictions.get("xception", 0.5)
-                
-                stacking_input_tensor = torch.from_numpy(stacking_input.reshape(1, -1)).float()
-                
-                with torch.no_grad():
-                    stacking_output = stacking_model(stacking_input_tensor)
-                    stacking_probability = float(stacking_output.item())
-                
-                stacking_ensemble_probability = stacking_probability * 100.0
-                weighted_votes = sum([1.0 for conf in model_predictions.values() if conf >= 0.5])
-                weighted_vote_strength = weighted_votes / len(model_predictions)
-                
-                results["ensemble"] = {
-                    "isAIGenerated": bool(stacking_probability >= 0.5),
-                    "confidence": float(stacking_ensemble_probability),
-                    "confidence_rounded": round(float(stacking_ensemble_probability), 2),
-                    "votes": f"{weighted_votes:.1f}/{len(model_predictions):.1f} (weight stacking)",
-                    "probability": float(stacking_probability),
-                    "ensemble_type": "Weight Stacking Ensemble (Neural Network Meta-Learner)",
-                    "weighted_vote_strength": float(weighted_vote_strength)
-                }
-                logger.info(f"Weight stacking: {stacking_ensemble_probability:.2f}% AI")
-            else:
-
-                logger.warning("Weight stacking unavailable - attempting weighted average fallback")
-                
-                weighted_sum = 0.0
-                total_weight = 0.0
-                weighted_votes = 0.0
-                
-                for model_name, model_result in results["models"].items():
-                    if "error" not in model_result:
-                        weight = MODEL_WEIGHTS.get(model_name, 0.25)
-                        confidence = model_result["confidence"]
-                        
-                        weighted_sum += weight * confidence
-                        total_weight += weight
-                        
-                        if confidence >= 50:
-                            weighted_votes += weight
-                
-                if total_weight > 0:
-                    boosting_ensemble_probability = weighted_sum / total_weight
-                    weighted_vote_strength = weighted_votes / total_weight
+                    logger.warning("Weight stacking unavailable - attempting weighted average fallback")
                     
-                    results["ensemble"] = {
-                        "isAIGenerated": bool(boosting_ensemble_probability >= 50),
-                        "confidence": float(boosting_ensemble_probability),
-                        "confidence_rounded": round(float(boosting_ensemble_probability), 2),
-                        "votes": f"{weighted_votes:.2f}/{total_weight:.2f} (weighted average fallback)",
-                        "probability": float(boosting_ensemble_probability / 100.0),
-                        "ensemble_type": "Fallback: Weighted Average Ensemble (Voting)",
-                        "weighted_details": model_results_for_ensemble,
-                        "weighted_vote_strength": float(weighted_vote_strength)
-                    }
-                    logger.info(f"Weighted average fallback: {boosting_ensemble_probability:.2f}% AI")
-                else:
-
-                    if "ela" in results["models"] and "error" not in results["models"]["ela"]:
-                        ela_conf = results["models"]["ela"]["confidence"]
+                    weighted_sum = 0.0
+                    total_weight = 0.0
+                    weighted_votes = 0.0
+                    
+                    for model_name, model_result in results["models"].items():
+                        if "error" not in model_result:
+                            weight = MODEL_WEIGHTS.get(model_name, 0.25)
+                            confidence = model_result["confidence"]
+                            
+                            weighted_sum += weight * confidence
+                            total_weight += weight
+                            
+                            if confidence >= 50:
+                                weighted_votes += weight
+                    
+                    if total_weight > 0:
+                        boosting_ensemble_probability = weighted_sum / total_weight
+                        weighted_vote_strength = weighted_votes / total_weight
+                        
                         results["ensemble"] = {
-                            "isAIGenerated": bool(ela_conf >= 50),
-                            "confidence": ela_conf,
-                            "confidence_rounded": round(ela_conf, 2),
-                            "votes": "1/1 (ELA only - fallback)",
-                            "probability": float(ela_conf / 100.0),
-                            "ensemble_type": "Fallback (ELA only)"
+                            "isAIGenerated": bool(boosting_ensemble_probability >= 50),
+                            "confidence": float(boosting_ensemble_probability),
+                            "confidence_rounded": round(float(boosting_ensemble_probability), 2),
+                            "votes": f"{weighted_votes:.2f}/{total_weight:.2f} (weighted average fallback)",
+                            "probability": float(boosting_ensemble_probability / 100.0),
+                            "ensemble_type": "Fallback: Weighted Average Ensemble (Voting)",
+                            "weighted_details": model_results_for_ensemble,
+                            "weighted_vote_strength": float(weighted_vote_strength)
                         }
-                        logger.info(f"ELA fallback: {ela_conf:.2f}% AI")
+                        logger.info(f"Weighted average fallback: {boosting_ensemble_probability:.2f}% AI")
                     else:
-                        raise Exception("All ensemble methods failed")
-        
-        return results
+
+                        if "ela" in results["models"] and "error" not in results["models"]["ela"]:
+                            ela_conf = results["models"]["ela"]["confidence"]
+                            results["ensemble"] = {
+                                "isAIGenerated": bool(ela_conf >= 50),
+                                "confidence": ela_conf,
+                                "confidence_rounded": round(ela_conf, 2),
+                                "votes": "1/1 (ELA only - fallback)",
+                                "probability": float(ela_conf / 100.0),
+                                "ensemble_type": "Fallback (ELA only)"
+                            }
+                            logger.info(f"ELA fallback: {ela_conf:.2f}% AI")
+                        else:
+                            raise Exception("All ensemble methods failed")
+            
+            return results
         
     except Exception as e:
         logger.error(f"Error in analyze_image: {type(e).__name__}: {str(e)}", exc_info=True)
