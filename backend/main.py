@@ -184,6 +184,23 @@ _xception_model: Optional[object] = None
 _stacking_model: Optional[object] = None
 _stacking_checkpoint: Optional[dict] = None
 
+def _force_memory_release():
+    """Force Python GC + glibc to return freed memory to OS.
+    
+    Python's memory allocator (pymalloc) keeps freed heap pages in internal
+    free-lists. gc.collect() frees Python objects, but glibc's malloc doesn't
+    return those pages to the OS. malloc_trim(0) forces glibc to release
+    freed memory back to the OS — this is critical in containers with
+    limited RAM (~512MB-1GB).
+    """
+    gc.collect()
+    gc.collect()  # Second pass catches weak-ref / __del__ releases
+    try:
+        import ctypes
+        ctypes.CDLL('libc.so.6').malloc_trim(0)
+    except Exception:
+        pass  # Not on Linux or libc unavailable
+
 def _unload_model(name):
     """Unload a specific cached model to free memory.
     
@@ -199,7 +216,7 @@ def _unload_model(name):
         _freq_model = None
     elif name == 'xception':
         _xception_model = None
-    gc.collect()
+    _force_memory_release()
     logger.debug(f"Unloaded {name} model to free memory")
 
 def _get_container_memory():
@@ -466,7 +483,7 @@ def load_model() -> object:
         if not TORCH_AVAILABLE:
             raise RuntimeError("ต้องติดตั้ง torch และ torchvision เพื่อโหลด model")
         
-        raw = safe_pickle_load(MODEL_PATH)
+        raw = safe_torch_load(MODEL_PATH)
         
         logger.info(f"โหลด .pkl ไฟล์สำเร็จ - keys: {list(raw.keys())}")
         logger.info(f"Training performance: {raw.get('performance', {})}")
@@ -503,7 +520,7 @@ def load_pixel_model() -> object:
         checkpoint = None
         try:
             logger.info("Loading Pixel model...")
-            checkpoint = safe_pickle_load(MODEL_PATH)
+            checkpoint = safe_torch_load(MODEL_PATH)
             logger.info("Successfully loaded Pixel model")
         except Exception as e:
             logger.error(f"Failed to load Pixel model: {e}")
@@ -581,7 +598,7 @@ def load_freq_model() -> object:
         checkpoint = None
         try:
             logger.info("Loading Frequency model...")
-            checkpoint = safe_pickle_load(MODEL_PATH)
+            checkpoint = safe_torch_load(MODEL_PATH)
             logger.info("Successfully loaded Frequency model")
         except Exception as e:
             logger.error(f"Failed to load Frequency model: {e}")
@@ -627,7 +644,7 @@ def load_xception_model() -> object:
             return None
         
         try:
-            checkpoint = safe_pickle_load(MODEL_PATH)
+            checkpoint = safe_torch_load(MODEL_PATH)
             
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
                 state_dict = checkpoint['model_state_dict']
@@ -727,8 +744,12 @@ async def analyze_image(image_path: str) -> dict:
             logger.error(f"ELA model error: {e}")
             results["models"]["ela"] = {"error": str(e)}
         
-        # Drop local reference + unload global cache before next model
-        model = None
+        # Drop ALL references from ELA step before loading next model
+        model = ela_img = None
+        try:
+            del ela_tensor, rgb_tensor, out, proba
+        except NameError:
+            pass
         _unload_model('ela')
         _log_memory('after ELA unload')
         
@@ -752,8 +773,12 @@ async def analyze_image(image_path: str) -> dict:
             logger.error(f"Xception model error: {e}")
             results["models"]["xception"] = {"error": str(e)}
         
-        # Drop local reference + unload global cache before next model
+        # Drop ALL references from Xception step before loading next model
         model = None
+        try:
+            del xcep_tensor
+        except NameError:
+            pass
         _unload_model('xception')
         _log_memory('after Xception unload')
         
@@ -786,8 +811,12 @@ async def analyze_image(image_path: str) -> dict:
             logger.error(f"Frequency model error: {e}")
             results["models"]["frequency"] = {"error": str(e)}
         
-        # Drop local reference + unload global cache before next model
-        model = None
+        # Drop ALL references from Frequency step before loading next model
+        model = freq_img = None
+        try:
+            del freq_tensor, out, proba
+        except NameError:
+            pass
         _unload_model('frequency')
         _log_memory('after Frequency unload')
         
