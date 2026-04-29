@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
-import { FiShield, FiArrowDown, FiLock, FiTarget, FiUpload, FiX, FiBarChart2, FiChevronDown } from 'react-icons/fi'
+import { FiShield, FiArrowDown, FiLock, FiTarget, FiUpload, FiX, FiBarChart2, FiChevronDown, FiMenu } from 'react-icons/fi'
 import { BiChevronRight } from 'react-icons/bi'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://web-baseai-production.up.railway.app'
@@ -76,6 +76,14 @@ function App() {
   const [selectedMethod, setSelectedMethod] = useState(null)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [selectedAudience, setSelectedAudience] = useState('auditors')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const scrollToSection = (id) => {
+    setMobileMenuOpen(false)
+    setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+    }, 100)
+  }
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -208,10 +216,30 @@ function App() {
           </div>
           <span className="logo-text">TruPic</span>
         </div>
-        <nav className="nav">
-          <a href="#features" className="nav-link">Features</a>
-          <a href="#how-it-works" className="nav-link">How it work</a>
-          <a href="#about" className="nav-link">About</a>
+        {/* Desktop nav */}
+        <nav className="nav desktop-nav">
+          <a href="#how-to-use" className="nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('how-to-use') }}>How to Use</a>
+          <a href="#upload" className="nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('upload') }}>Try It</a>
+          <a href="#features" className="nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('features') }}>Features</a>
+          <a href="#how-it-works" className="nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('how-it-works') }}>How It Works</a>
+          <a href="#use-cases" className="nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('use-cases') }}>Use Cases</a>
+          <a href="#benefits" className="nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('benefits') }}>Benefits</a>
+        </nav>
+
+        {/* Mobile hamburger button */}
+        <button className="hamburger-btn" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="Toggle menu">
+          {mobileMenuOpen ? <FiX size={24} /> : <FiMenu size={24} />}
+        </button>
+
+        {/* Mobile drawer overlay */}
+        <div className={`mobile-menu-overlay ${mobileMenuOpen ? 'open' : ''}`} onClick={() => setMobileMenuOpen(false)} />
+        <nav className={`mobile-nav ${mobileMenuOpen ? 'open' : ''}`}>
+          <a href="#how-to-use" className="mobile-nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('how-to-use') }}>How to Use</a>
+          <a href="#upload" className="mobile-nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('upload') }}>Try It</a>
+          <a href="#features" className="mobile-nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('features') }}>Features</a>
+          <a href="#how-it-works" className="mobile-nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('how-it-works') }}>How It Works</a>
+          <a href="#use-cases" className="mobile-nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('use-cases') }}>Use Cases</a>
+          <a href="#benefits" className="mobile-nav-link" onClick={(e) => { e.preventDefault(); scrollToSection('benefits') }}>Benefits</a>
         </nav>
       </header>
 
@@ -242,7 +270,7 @@ function App() {
             </button>
           </div>
 
-          <section className="how-to-use-section">
+          <section className="how-to-use-section" id="how-to-use">
             <div className="how-to-use-container">
               <h2 className="how-to-use-title">How to Use Our AI Image Detector?</h2>
 
@@ -264,7 +292,7 @@ function App() {
             </div>
           </section>
 
-          <div className="upload-section" ref={uploadSectionRef}>
+          <div className="upload-section" id="upload" ref={uploadSectionRef}>
             <h2 className="upload-title">Upload Your Image</h2>
 
             {!preview ? (
@@ -508,7 +536,7 @@ function App() {
             </div>
           </section>
 
-          <section className="use-cases-section">
+          <section className="use-cases-section" id="use-cases">
             <div className="use-cases-container">
               <h2 className="use-cases-title">What You Can Check With TruPic</h2>
               <p className="use-cases-subtitle">

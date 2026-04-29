@@ -17,7 +17,6 @@ import numpy as np
 from PIL import Image, ImageChops, ImageEnhance
 import uvicorn
 
-# Import model downloader
 try:
     from download_models import ensure_models_exist
     MODELS_DOWNLOAD_AVAILABLE = True
@@ -117,13 +116,9 @@ def safe_torch_load(filepath):
         return safe_pickle_load(filepath)
     with _patch_main_for_torch_load():
         try:
-            # Prefer weights_only to reduce memory + avoid executing pickled code.
-            # If the file is NOT a torch checkpoint (e.g., pure pickle), this will fail
-            # and we fall back below.
             return torch.load(filepath, map_location=torch.device('cpu'), weights_only=True)
         except Exception as e:
             try:
-                # Some checkpoints (or older torch versions) may require full load.
                 return torch.load(filepath, map_location=torch.device('cpu'), weights_only=False)
             except Exception as e2:
                 logger.info(f"torch.load failed ({e2}), falling back to pickle.load")
@@ -131,7 +126,6 @@ def safe_torch_load(filepath):
 
 app = FastAPI(title="TruPic API", version="1.0.0")
 
-# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -145,7 +139,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup event - non-blocking model download
 @app.on_event("startup")
 async def startup_event():
     import threading
@@ -155,8 +148,6 @@ async def startup_event():
     logger.info(f"CV2_AVAILABLE: {CV2_AVAILABLE}")
     logger.info(f"PORT env: {os.getenv('PORT', 'not set')}")
 
-    # Reduce peak memory usage in small containers by limiting CPU thread pools.
-    # This helps avoid transient allocation spikes that can trigger OOM kills.
     try:
         os.environ.setdefault("OMP_NUM_THREADS", "1")
         os.environ.setdefault("MKL_NUM_THREADS", "1")
@@ -169,7 +160,6 @@ async def startup_event():
     except Exception:
         pass
     
-    # Download models in background thread to avoid blocking startup
     if MODELS_DOWNLOAD_AVAILABLE:
         def download_in_background():
             try:
@@ -186,6 +176,18 @@ async def startup_event():
     logger.info("✓ Backend ready (accepting requests)!")
 
 BASE_DIR = Path(os.getenv("APP_BASE_DIR", str(Path(__file__).resolve().parent)))
+
+_MODEL_DIR_CANDIDATES = [
+    BASE_DIR / "model",
+    BASE_DIR.parent / "model",
+]
+
+def _resolve_model_path(filename: str) -> Path:
+    for d in _MODEL_DIR_CANDIDATES:
+        p = d / filename
+        if p.exists():
+            return p
+    return _MODEL_DIR_CANDIDATES[0] / filename
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 BACKGROUND_DIR = BASE_DIR / "background"
@@ -211,8 +213,6 @@ _xception_model: Optional[object] = None
 _stacking_model: Optional[object] = None
 _stacking_checkpoint: Optional[dict] = None
 
-# In small containers, concurrent /api/analyze requests can overlap model loads
-# and spike peak RAM enough to trigger an OOM kill. Serialize analyses by default.
 _analyze_lock = None
 
 def _force_memory_release():
@@ -225,12 +225,12 @@ def _force_memory_release():
     limited RAM (~512MB-1GB).
     """
     gc.collect()
-    gc.collect()  # Second pass catches weak-ref / __del__ releases
+    gc.collect()  
     try:
         import ctypes
         ctypes.CDLL('libc.so.6').malloc_trim(0)
     except Exception:
-        pass  # Not on Linux or libc unavailable
+        pass  
 
 def _unload_model(name):
     """Unload a specific cached model to free memory.
@@ -257,7 +257,6 @@ def _get_container_memory():
     Must read cgroup files for actual container memory.
     Returns (limit_mb, usage_mb, available_mb) or (None, None, None).
     """
-    # Try cgroup v2 first (modern Docker/containerd)
     try:
         with open('/sys/fs/cgroup/memory.max', 'r') as f:
             limit = f.read().strip()
@@ -507,7 +506,7 @@ else:
 def load_model() -> object:
     global _model
     if _model is None:
-        MODEL_PATH = BASE_DIR / "model" / "full_model_ela.pkl"
+        MODEL_PATH = _resolve_model_path("full_model_ela.pkl")
         if not MODEL_PATH.exists():
             raise FileNotFoundError(f"ไม่พบไฟล์โมเดลที่ {MODEL_PATH}")
 
@@ -543,7 +542,7 @@ def load_model() -> object:
 def load_pixel_model() -> object:
     global _pixel_model
     if _pixel_model is None:
-        MODEL_PATH = BASE_DIR / "model" / "full_model_pixelhybrid.pkl"
+        MODEL_PATH = _resolve_model_path("full_model_pixelhybrid.pkl")
         if not MODEL_PATH.exists():
             logger.warning(f"Pixel model not found at {MODEL_PATH}")
             return None
@@ -577,8 +576,6 @@ def load_pixel_model() -> object:
                 logger.info("Successfully loaded Pixel model from state_dict")
 
             elif TORCH_AVAILABLE and isinstance(checkpoint, nn.Module):
-                # If the checkpoint is a full Module object, strip it down to a state_dict
-                # and rebuild a fresh instance to reduce retained training/serialization baggage.
                 try:
                     sd = checkpoint.state_dict()
                     del checkpoint
@@ -632,7 +629,7 @@ def load_pixel_model() -> object:
 def load_freq_model() -> object:
     global _freq_model
     if _freq_model is None:
-        MODEL_PATH = BASE_DIR / "model" / "full_model_freq.pkl"
+        MODEL_PATH = _resolve_model_path("full_model_freq.pkl")
         if not MODEL_PATH.exists():
             logger.warning(f"Frequency model not found at {MODEL_PATH}")
             return None
@@ -665,7 +662,6 @@ def load_freq_model() -> object:
                 _freq_model = model
                 logger.info("Successfully loaded Frequency model from state_dict")
             elif TORCH_AVAILABLE and isinstance(checkpoint, nn.Module):
-                # Rebuild from state_dict to avoid retaining extra pickled baggage.
                 sd = checkpoint.state_dict()
                 del checkpoint
                 sd = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in sd.items()}
@@ -677,7 +673,6 @@ def load_freq_model() -> object:
                 _freq_model = model
                 logger.info("Loaded Frequency model via Module→state_dict rebuild")
             else:
-                # Unknown format; keep as-is (best effort)
                 _freq_model = checkpoint
                 if hasattr(checkpoint, 'cpu'):
                     checkpoint.cpu()
@@ -693,7 +688,7 @@ def load_freq_model() -> object:
 def load_xception_model() -> object:
     global _xception_model
     if _xception_model is None:
-        MODEL_PATH = BASE_DIR / "model" / "full_model_xception.pkl"
+        MODEL_PATH = _resolve_model_path("full_model_xception.pkl")
         if not MODEL_PATH.exists():
             logger.warning(f"Xception model not found at {MODEL_PATH}")
             return None
@@ -736,7 +731,7 @@ def load_stacking_model():
     global _stacking_model, _stacking_checkpoint
     
     if _stacking_model is None:
-        MODEL_PATH = BASE_DIR / "model" / "stacking_meta_learner.pkl"
+        MODEL_PATH = _resolve_model_path("stacking_meta_learner.pkl")
         if not MODEL_PATH.exists():
             logger.warning(f"Stacking model not found at {MODEL_PATH}")
             return None, None
@@ -766,8 +761,6 @@ async def analyze_image(image_path: str) -> dict:
     try:
         if not TORCH_AVAILABLE:
             raise RuntimeError("ต้องติดตั้ง torch เพื่อใช้งาน model")
-
-        # Lazily create the lock (avoids event-loop issues at import time)
         global _analyze_lock
         if _analyze_lock is None:
             import asyncio
@@ -816,7 +809,6 @@ async def analyze_image(image_path: str) -> dict:
                 logger.error(f"ELA model error: {e}")
                 results["models"]["ela"] = {"error": str(e)}
         
-            # Drop ALL references from ELA step before loading next model
             model = ela_img = None
             try:
                 del ela_tensor, rgb_tensor, out, proba
@@ -845,7 +837,6 @@ async def analyze_image(image_path: str) -> dict:
                 logger.error(f"Xception model error: {e}")
                 results["models"]["xception"] = {"error": str(e)}
         
-            # Drop ALL references from Xception step before loading next model
             model = None
             try:
                 del xcep_tensor
@@ -854,8 +845,6 @@ async def analyze_image(image_path: str) -> dict:
             _unload_model('xception')
             _log_memory('after Xception unload')
 
-            # Frequency can still spike memory on load (some .pkl contain full nn.Module),
-            # so we guard it in small containers.
             _skip_frequency = False
             limit_mb, usage_mb, avail_mb = _get_container_memory()
             if avail_mb is not None:
@@ -896,7 +885,6 @@ async def analyze_image(image_path: str) -> dict:
                     logger.error(f"Frequency model error: {e}")
                     results["models"]["frequency"] = {"error": str(e)}
         
-            # Drop ALL references from Frequency step before loading next model
             model = freq_img = None
             try:
                 del freq_tensor, out, proba
@@ -905,8 +893,6 @@ async def analyze_image(image_path: str) -> dict:
             _unload_model('frequency')
             _log_memory('after Frequency unload')
         
-            # Pixel is loaded last (largest model, lowest weight 0.16)
-            # Check available memory to avoid OOM kill
             _skip_pixel = False
             limit_mb, usage_mb, avail_mb = _get_container_memory()
             if avail_mb is not None:
@@ -915,7 +901,6 @@ async def analyze_image(image_path: str) -> dict:
                     logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Pixel model to avoid OOM")
                     _skip_pixel = True
             else:
-                # Fallback: try /proc/meminfo (won't work in containers but better than nothing)
                 try:
                     with open('/proc/meminfo', 'r') as f:
                         for line in f:
@@ -1073,7 +1058,17 @@ async def analyze_image(image_path: str) -> dict:
                             }
                             logger.info(f"ELA fallback: {ela_conf:.2f}% AI")
                         else:
-                            raise Exception("All ensemble methods failed")
+                            results["ensemble"] = {
+                                "isAIGenerated": False,
+                                "confidence": 0.0,
+                                "confidence_rounded": 0.0,
+                                "votes": "0/0 (no models available)",
+                                "probability": 0.0,
+                                "ensemble_type": "No models available",
+                                "weighted_details": {},
+                                "weighted_vote_strength": 0.0
+                            }
+                            logger.warning("No models available; returning empty ensemble result")
         
             else:
                 logger.info("Using weight stacking (neural network meta-learner) as primary ensemble")
@@ -1156,7 +1151,17 @@ async def analyze_image(image_path: str) -> dict:
                             }
                             logger.info(f"ELA fallback: {ela_conf:.2f}% AI")
                         else:
-                            raise Exception("All ensemble methods failed")
+                            results["ensemble"] = {
+                                "isAIGenerated": False,
+                                "confidence": 0.0,
+                                "confidence_rounded": 0.0,
+                                "votes": "0/0 (no models available)",
+                                "probability": 0.0,
+                                "ensemble_type": "No models available",
+                                "weighted_details": {},
+                                "weighted_vote_strength": 0.0
+                            }
+                            logger.warning("No models available; returning empty ensemble result")
             
             return results
         
@@ -1285,7 +1290,6 @@ def metadata_analysis(contents: bytes) -> dict:
         datetime_val = exif_data.get('datetime', None)
         is_edited = False
         if software:
-            # ถ้ามี software เช่น Photoshop, Snapseed, หรืออื่น ๆ ถือว่าอาจถูกแก้ไข
             edit_keywords = ['photoshop', 'snapseed', 'lightroom', 'editor', 'gimp', 'pixlr', 'edit']
             is_edited = any(kw in str(software).lower() for kw in edit_keywords)
         return {
@@ -1308,7 +1312,7 @@ async def metadata_analysis_endpoint(image: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="กรุณาอัปโหลดไฟล์รูปภาพเฉพาะ (jpeg, jpg, png เท่านั้น)")
     contents = await image.read()
     if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="ขนาดไฟล์ต้องไม่เกิน 10MB")
+        raise HTTPException(status_code=400, detail="ขนาดไฟล์ต้องไม่เกิน 20MB")
     result = metadata_analysis(contents)
     return {'success': True, 'result': result}
 
@@ -1327,7 +1331,7 @@ async def analyze_image_endpoint(image: UploadFile = File(...), force: Optional[
         if len(contents) > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail="ขนาดไฟล์ต้องไม่เกิน 10MB"
+                detail="ขนาดไฟล์ต้องไม่เกิน 20MB"
             )
 
 
@@ -1397,7 +1401,13 @@ async def analyze_image_endpoint(image: UploadFile = File(...), force: Optional[
                 pass
         logger.exception("POST /api/analyze failed")
         detail = str(e).strip() or "เกิดข้อผิดพลาดในการวิเคราะห์ภาพ"
-        raise HTTPException(status_code=500, detail=detail)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "error": detail,
+            },
+        )
 
 @app.post("/api/test-model-importance")
 async def test_model_importance(image: UploadFile = File(...)):
@@ -1410,7 +1420,7 @@ async def test_model_importance(image: UploadFile = File(...)):
     
     contents = await image.read()
     if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="ขนาดไฟล์ต้องไม่เกิน 10MB")
+        raise HTTPException(status_code=400, detail="ขนาดไฟล์ต้องไม่เกิน 20MB")
     
     try:
         if not TORCH_AVAILABLE:
