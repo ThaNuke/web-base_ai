@@ -161,17 +161,12 @@ async def startup_event():
         pass
     
     if MODELS_DOWNLOAD_AVAILABLE:
-        def download_in_background():
-            try:
-                logger.info("Background: Checking for model files...")
-                ensure_models_exist()
-                logger.info("Background: ✓ Models available!")
-            except Exception as e:
-                logger.warning(f"Background: Model download failed: {e}")
-        
-        thread = threading.Thread(target=download_in_background, daemon=True)
-        thread.start()
-        logger.info("Model download started in background thread")
+        try:
+            logger.info("⏳ Downloading model files (server will accept requests after download completes)...")
+            ensure_models_exist()
+            logger.info("✓ All models downloaded successfully!")
+        except Exception as e:
+            logger.warning(f"⚠️ Model download failed: {e}")
     
     logger.info("✓ Backend ready (accepting requests)!")
 
@@ -833,6 +828,9 @@ async def analyze_image(image_path: str) -> dict:
                         "real_prob": p * 100.0
                     }
                     logger.info(f"Xception: {xcep_ai_prob:.2f}% AI")
+                else:
+                    logger.warning("Xception model not available (file not found or failed to load)")
+                    results["models"]["xception"] = {"error": "Model file not found or failed to load"}
             except Exception as e:
                 logger.error(f"Xception model error: {e}")
                 results["models"]["xception"] = {"error": str(e)}
