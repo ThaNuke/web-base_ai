@@ -192,6 +192,9 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 
 ENSEMBLE_METHOD = "weighted_average"  
 
+# Toggle pixel model via env var: set ENABLE_PIXEL_MODEL=true on Railway when upgrading RAM
+ENABLE_PIXEL_MODEL = os.getenv("ENABLE_PIXEL_MODEL", "false").lower() == "true"
+
 
 MODEL_WEIGHTS = {
     "ela": 0.24,
@@ -890,10 +893,49 @@ async def analyze_image(image_path: str) -> dict:
             _unload_model('frequency')
             _log_memory('after Frequency unload')
         
-            # Pixel model DISABLED to prevent OOM on free tier (< 1GB RAM)
-            # Re-enable when upgrading to a plan with more memory
-            results["models"]["pixel"] = {"error": "Disabled (insufficient container memory)"}
-            logger.info("Pixel model skipped (disabled to prevent OOM)")
+            # Pixel model controlled by ENABLE_PIXEL_MODEL env var
+            # Set ENABLE_PIXEL_MODEL=true on Railway when upgrading to more RAM
+            if not ENABLE_PIXEL_MODEL:
+                results["models"]["pixel"] = {"error": "Disabled (set ENABLE_PIXEL_MODEL=true to enable)"}
+                logger.info("Pixel model skipped (ENABLE_PIXEL_MODEL=false)")
+            else:
+                try:
+                    model = load_pixel_model()
+                    if model is not None:
+                        pix_img = convert_to_pixel_map_from_pil(image)
+                        
+                        t_pix = T.Compose([
+                            T.Resize((224, 224)),
+                            T.ToTensor(),
+                            T.Normalize([0.5]*4, [0.5]*4)
+                        ])
+                        
+                        pix_tensor = t_pix(pix_img).unsqueeze(0).to(device)
+                        rgb_tensor = t_rgb(image).unsqueeze(0).to(device)
+                        
+                        with torch.no_grad():
+                            out = model(pix_tensor, rgb_tensor)
+                            proba = torch.softmax(out, dim=1)[0].cpu().numpy()
+                        
+                        pixel_ai_prob = float(proba[1]) * 100.0
+                        results["models"]["pixel"] = {
+                            "name": "PixelRes (4-channel)",
+                            "isAI": bool(proba[1] >= 0.5),
+                            "confidence": pixel_ai_prob,
+                            "real_prob": float(proba[0]) * 100.0
+                        }
+                        logger.info(f"Pixel: {pixel_ai_prob:.2f}% AI")
+                except Exception as e:
+                    logger.error(f"Pixel model error: {e}")
+                    results["models"]["pixel"] = {"error": str(e)}
+                finally:
+                    model = None
+                    try:
+                        del pix_tensor, rgb_tensor, out, proba, pix_img
+                    except NameError:
+                        pass
+                    _unload_model('pixel')
+                    _log_memory('after Pixel unload')
         
             logger.info(f"Attempting ensemble method: {ENSEMBLE_METHOD}")
         
