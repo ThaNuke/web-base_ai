@@ -543,8 +543,8 @@ html {
 .feature-card {
   padding: 2.5rem 2rem;
   border-radius: 16px;
-  border: 2px solid #e5e7eb;
-  background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
+  border: 2px solid rgba(124, 58, 237, 0.3);
+  background: linear-gradient(135deg, #faf8ff 0%, #f3e8ff 100%);
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   text-align: center;
   position: relative;
@@ -565,8 +565,8 @@ html {
 }
 
 .feature-card:hover {
-  border-color: #bfdbfe;
-  box-shadow: 0 20px 40px rgba(59, 130, 246, 0.15);
+  border-color: #7c3aed;
+  box-shadow: 0 20px 40px rgba(124, 58, 237, 0.25);
   transform: translateY(-8px);
 }
 
@@ -582,15 +582,15 @@ html {
   height: 80px;
   margin: 0 auto 1.5rem;
   border-radius: 14px;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.12);
+  background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
+  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.15);
   transition: all 0.3s ease;
 }
 
 .feature-card:hover .feature-icon {
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  background: linear-gradient(135deg, #e9d5ff 0%, #ddd6fe 100%);
   transform: scale(1.1) rotate(5deg);
-  box-shadow: 0 12px 30px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 12px 30px rgba(124, 58, 237, 0.25);
 }
 
 .feature-title {
@@ -654,8 +654,8 @@ html {
 .method-card {
   padding: 2.25rem;
   border-radius: 16px;
-  background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
-  border: 2px solid #e5e7eb;
+  background: linear-gradient(135deg, #faf8ff 0%, #f3e8ff 100%);
+  border: 2px solid rgba(124, 58, 237, 0.3);
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
@@ -670,13 +670,13 @@ html {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent);
+  background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.15), transparent);
   transition: all 0.6s ease;
 }
 
 .method-card:hover {
-  border-color: #bfdbfe;
-  box-shadow: 0 20px 40px rgba(59, 130, 246, 0.15);
+  border-color: #7c3aed;
+  box-shadow: 0 20px 40px rgba(124, 58, 237, 0.25);
   transform: translateY(-8px);
 }
 
@@ -719,9 +719,9 @@ html {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
-  border: 2px solid #e5e7eb;
+  border: 2px solid rgba(124, 58, 237, 0.3);
   border-radius: 8px;
-  background: transparent;
+  background: linear-gradient(135deg, #faf8ff 0%, #f3e8ff 100%);
   color: #374151;
   font-size: 0.95rem;
   font-weight: 600;
@@ -811,14 +811,14 @@ html {
 }
 
 .detail-description-box {
-  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  background: linear-gradient(135deg, #e9d5ff 0%, #ddd6fe 100%);
   border-radius: 16px;
   padding: 2.5rem;
   font-size: 1rem;
   line-height: 1.8;
   color: #1f2937;
-  box-shadow: 0 12px 40px rgba(59, 130, 246, 0.2);
-  border: 2px solid rgba(59, 130, 246, 0.2);
+  box-shadow: 0 12px 40px rgba(124, 58, 237, 0.2);
+  border: 2px solid rgba(124, 58, 237, 0.25);
   position: relative;
   overflow: hidden;
 }
@@ -1038,9 +1038,9 @@ html {
 
 .category-tab {
   padding: 0.875rem 1.75rem;
-  border: 2px solid #e5e7eb;
+  border: 2px solid rgba(124, 58, 237, 0.3);
   border-radius: 25px;
-  background: white;
+  background: linear-gradient(135deg, #faf8ff 0%, #f3e8ff 100%);
   color: #374151;
   font-size: 0.95rem;
   font-weight: 600;
@@ -1094,10 +1094,10 @@ html {
   text-align: center;
   max-width: 800px;
   margin: 0 auto;
-  background: linear-gradient(135deg, #f9fafb 0%, #faf8ff 100%);
+  background: linear-gradient(135deg, #faf8ff 0%, #f3e8ff 100%);
   padding: 2.5rem;
   border-radius: 16px;
-  border: 2px solid rgba(124, 58, 237, 0.1);
+  border: 2px solid rgba(124, 58, 237, 0.25);
   animation: fadeInUp 0.5s ease-out;
 }
 
@@ -2958,7 +2958,7 @@ html {
   gap: 0.5rem;
   width: 100%;
   padding: 0.95rem 1.5rem;
-  background: linear-gradient(135deg, #134e5e 0%, #1a6b5a 100%);
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
   color: #ffffff;
   border: none;
   border-radius: 12px;
@@ -2967,14 +2967,14 @@ html {
   cursor: pointer;
   transition: all 0.25s ease;
   letter-spacing: -0.01em;
-  box-shadow: 0 4px 14px rgba(19, 78, 94, 0.25);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
   margin-top: 0.5rem;
 }
 
 .result-v2-retry:hover {
-  background: linear-gradient(135deg, #0f3d4c 0%, #15594b 100%);
+  background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(19, 78, 94, 0.35);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.5);
 }
 
 .result-v2-retry:active {
