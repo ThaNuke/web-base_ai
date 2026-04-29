@@ -123,23 +123,28 @@ function App() {
   const benefitsData = {
     auditors: {
       category: 'Online Platform Auditors',
-      description: 'Reviewing promotional or advertising images ensures that visual materials are accurate and reliable before public dissemination.'
+      description: 'Reviewing promotional or advertising images ensures that visual materials are accurate and reliable before public dissemination.',
+      image: '/benefits/auditors.png'
     },
     media: {
       category: 'News Media Practitioners',
-      description: 'Verify the authenticity of photographs and visual content to maintain journalistic integrity and combat misinformation.'
+      description: 'Verify the authenticity of photographs and visual content to maintain journalistic integrity and combat misinformation.',
+      image: '/benefits/media.png'
     },
     ecommerce: {
       category: 'E-Commerce Platform Operators',
-      description: 'Protect customers from fraudulent product listings by detecting AI-generated or manipulated product images.'
+      description: 'Protect customers from fraudulent product listings by detecting AI-generated or manipulated product images.',
+      image: '/benefits/ecommerce.png'
     },
     appraisers: {
       category: 'Art Appraisers',
-      description: 'Authenticate artwork and detect digitally manipulated or AI-created artwork to provide accurate valuations.'
+      description: 'Authenticate artwork and detect digitally manipulated or AI-created artwork to provide accurate valuations.',
+      image: '/benefits/appraisers.png'
     },
     marketers: {
       category: 'Marketing & Advertising Professionals',
-      description: 'Ensure brand authenticity and compliance with advertising regulations by detecting fabricated visual content.'
+      description: 'Ensure brand authenticity and compliance with advertising regulations by detecting fabricated visual content.',
+      image: '/benefits/marketers.png'
     }
   }
 
@@ -574,6 +579,9 @@ function App() {
               </div>
 
               <div className="benefits-content">
+                <div className="benefits-image">
+                  <img src={benefitsData[selectedAudience].image} alt={benefitsData[selectedAudience].category} />
+                </div>
                 <div className="benefits-description">
                   {benefitsData[selectedAudience].description}
                 </div>
@@ -582,6 +590,50 @@ function App() {
           </section>
         </div>
       </main>
+
+      <footer className="footer">
+        <div className="footer-container">
+          <div className="footer-top">
+            <div className="footer-brand">
+              <div className="footer-logo">
+                <div className="logo-icon">
+                  <FiShield size={28} color="#FFFFFF" />
+                </div>
+                <span className="logo-text">TruPic</span>
+              </div>
+              <p className="footer-tagline">
+                Advanced AI-powered image detection to help you distinguish real images from AI-generated content with confidence.
+              </p>
+            </div>
+
+            <div className="footer-links">
+              <h4 className="footer-links-title">Quick Links</h4>
+              <a href="#how-to-use" className="footer-link" onClick={(e) => { e.preventDefault(); scrollToSection('how-to-use') }}>How to Use</a>
+              <a href="#upload" className="footer-link" onClick={(e) => { e.preventDefault(); scrollToSection('upload') }}>Try It</a>
+              <a href="#features" className="footer-link" onClick={(e) => { e.preventDefault(); scrollToSection('features') }}>Features</a>
+              <a href="#how-it-works" className="footer-link" onClick={(e) => { e.preventDefault(); scrollToSection('how-it-works') }}>How It Works</a>
+              <a href="#use-cases" className="footer-link" onClick={(e) => { e.preventDefault(); scrollToSection('use-cases') }}>Use Cases</a>
+              <a href="#benefits" className="footer-link" onClick={(e) => { e.preventDefault(); scrollToSection('benefits') }}>Benefits</a>
+            </div>
+
+            <div className="footer-about">
+              <h4 className="footer-links-title">About</h4>
+              <p className="footer-about-text">
+                TruPic uses an ensemble of four deep learning models — CNN, Frequency-domain, Pixel-level, and ELA analysis — to detect AI-generated images with high accuracy.
+              </p>
+              <p className="footer-about-text">
+                Your images are processed securely and never stored on our servers.
+              </p>
+            </div>
+          </div>
+
+          <div className="footer-divider" />
+
+          <div className="footer-bottom">
+            <p className="footer-copyright">© {new Date().getFullYear()} TruPic. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
