@@ -141,7 +141,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    import threading
     logger.info("🚀 Starting backend server...")
     logger.info(f"Python working directory: {os.getcwd()}")
     logger.info(f"TORCH_AVAILABLE: {TORCH_AVAILABLE}")
@@ -847,7 +846,7 @@ async def analyze_image(image_path: str) -> dict:
             limit_mb, usage_mb, avail_mb = _get_container_memory()
             if avail_mb is not None:
                 logger.info(f"Container memory before Frequency: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
-                if avail_mb < 500:
+                if avail_mb < 300:
                     logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Frequency model to avoid OOM")
                     _skip_frequency = True
 
@@ -891,65 +890,10 @@ async def analyze_image(image_path: str) -> dict:
             _unload_model('frequency')
             _log_memory('after Frequency unload')
         
-            _skip_pixel = False
-            limit_mb, usage_mb, avail_mb = _get_container_memory()
-            if avail_mb is not None:
-                logger.info(f"Container memory before Pixel: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
-                if avail_mb < 350:
-                    logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Pixel model to avoid OOM")
-                    _skip_pixel = True
-            else:
-                try:
-                    with open('/proc/meminfo', 'r') as f:
-                        for line in f:
-                            if 'MemAvailable' in line:
-                                host_avail = int(line.split()[1]) / 1024
-                                logger.info(f"Host memory available: {host_avail:.0f}MB (container limit unknown)")
-                                break
-                except Exception:
-                    pass
-            
-            if _skip_pixel:
-                results["models"]["pixel"] = {"error": "Skipped (insufficient memory)"}
-            else:
-                try:
-                    model = load_pixel_model()
-                    if model is not None:
-                        pix_img = convert_to_pixel_map_from_pil(image)
-                        
-                        t_pix = T.Compose([
-                            T.Resize((224, 224)),
-                            T.ToTensor(),
-                            T.Normalize([0.5]*4, [0.5]*4)
-                        ])
-                        
-                        pix_tensor = t_pix(pix_img).unsqueeze(0).to(device)
-                        rgb_tensor = t_rgb(image).unsqueeze(0).to(device)
-                        
-                        with torch.no_grad():
-                            out = model(pix_tensor, rgb_tensor)
-                            proba = torch.softmax(out, dim=1)[0].cpu().numpy()
-                        
-                        pixel_ai_prob = float(proba[1]) * 100.0
-                        results["models"]["pixel"] = {
-                            "name": "PixelRes (4-channel)",
-                            "isAI": bool(proba[1] >= 0.5),
-                            "confidence": pixel_ai_prob,
-                            "real_prob": float(proba[0]) * 100.0
-                        }
-                        logger.info(f"Pixel: {pixel_ai_prob:.2f}% AI")
-                except Exception as e:
-                    logger.error(f"Pixel model error: {e}")
-                    results["models"]["pixel"] = {"error": str(e)}
-
-            # Drop ALL references from Pixel step
-            model = pix_img = None
-            try:
-                del pix_tensor, rgb_tensor, out, proba
-            except NameError:
-                pass
-            _unload_model('pixel')
-            _log_memory('after Pixel unload')
+            # Pixel model DISABLED to prevent OOM on free tier (< 1GB RAM)
+            # Re-enable when upgrading to a plan with more memory
+            results["models"]["pixel"] = {"error": "Disabled (insufficient container memory)"}
+            logger.info("Pixel model skipped (disabled to prevent OOM)")
         
             logger.info(f"Attempting ensemble method: {ENSEMBLE_METHOD}")
         
