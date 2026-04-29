@@ -1250,7 +1250,7 @@ html {
 /* Upload Section */
 .upload-section {
   width: 100%;
-  padding: 4rem 2rem;
+  padding: 4rem 2rem 8rem 2rem;
   margin: 0 auto;
   background: #faf8ff;
 }
@@ -1354,7 +1354,7 @@ html {
   flex-direction: column;
   gap: 2rem;
   max-width: 900px;
-  margin: 0 auto;
+  margin: 0 auto 4rem auto;
 }
 
 .image-preview {
@@ -3265,16 +3265,17 @@ html {
   top: 0;
   right: 0;
   width: 280px;
-  height: 100%;
+  height: 100vh;
   background: linear-gradient(180deg, #ffffff 0%, #f5f0ff 100%);
   z-index: 160;
   flex-direction: column;
   padding: 5.5rem 1.5rem 2rem;
-  gap: 0.25rem;
+  gap: 0;
   transform: translateX(100%);
   transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: -8px 0 30px rgba(124, 58, 237, 0.15);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .mobile-nav.open {
