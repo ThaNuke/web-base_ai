@@ -1,0 +1,2937 @@
+
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Importance Report - Frequency Impact Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        .summary-item {
+            text-align: center;
+        }
+        .summary-item h3 {
+            color: #667eea;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        .summary-item .value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+            font-size: 0.95em;
+        }
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+        th {
+            padding: 15px;
+            text-align: center;
+            font-weight: 600;
+            border: 1px solid #ddd;
+        }
+        td {
+            padding: 12px 15px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+        tbody tr {
+            transition: background-color 0.2s;
+        }
+        tbody tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tbody tr:hover {
+            background-color: #f0f0f0;
+        }
+        .row-num {
+            font-weight: 500;
+            color: #667eea;
+            width: 60px;
+        }
+        .score {
+            background-color: #e8f4f8;
+            font-weight: 500;
+        }
+        .score-without {
+            background-color: #fff3e0;
+            font-weight: 500;
+        }
+        .impact {
+            background-color: #e8f5e9;
+            font-weight: 600;
+            color: #2e7d32;
+        }
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-download {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .notes {
+            background: #f5f5f5;
+            padding: 15px;
+            border-left: 4px solid #667eea;
+            margin-top: 20px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .notes h4 {
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+        @media print {
+            body {
+                background: white;
+            }
+            .container {
+                box-shadow: none;
+            }
+            .controls {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Model Importance - Frequency Impact Analysis</h1>
+        <p class="subtitle">Ablation Study Results - Dataset Senior Project</p>
+        
+        <div class="summary">
+            <div class="summary-item">
+                <h3>ทั้งหมด</h3>
+                <div class="value">298</div>
+            </div>
+            <div class="summary-item">
+                <h3>Real Images</h3>
+                <div class="value">150</div>
+            </div>
+            <div class="summary-item">
+                <h3>AI Images</h3>
+                <div class="value">150</div>
+            </div>
+            <div class="summary-item">
+                <h3>Avg Impact (Freq)</h3>
+                <div class="value">7.3485</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-download" onclick="downloadCSV()">📥 Download CSV</button>
+            <button class="btn btn-download" onclick="window.print()">🖨️ Print</button>
+        </div>
+
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th>ลำดับ</th>
+                    <th>ชื่อไฟล์</th>
+                    <th>ประเภท</th>
+                    <th>Score All<br/>(Baseline)</th>
+                    <th>scScore Without Freq<br/>(After Removal)</th>
+                    <th>Impact<br/>(Frequency)</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td class="row-num">1</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">0082_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">0.28</td>
+                    <td class="score-without">0.34</td>
+                    <td class="impact">0.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">2</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">0083_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">1.75</td>
+                    <td class="score-without">2.22</td>
+                    <td class="impact">0.47</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">3</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">0084_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">0.39</td>
+                    <td class="score-without">0.52</td>
+                    <td class="impact">0.13</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">4</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">0085_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">32.04</td>
+                    <td class="score-without">42.36</td>
+                    <td class="impact">10.32</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">5</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">0086_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">1.88</td>
+                    <td class="score-without">1.80</td>
+                    <td class="impact">0.08</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">6</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">115084_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">20.26</td>
+                    <td class="score-without">2.66</td>
+                    <td class="impact">17.60</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">7</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116356_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">53.09</td>
+                    <td class="score-without">37.60</td>
+                    <td class="impact">15.49</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">8</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116358_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">74.00</td>
+                    <td class="score-without">66.22</td>
+                    <td class="impact">7.78</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">9</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116359_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">42.38</td>
+                    <td class="score-without">23.18</td>
+                    <td class="impact">19.20</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">10</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116360_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">48.02</td>
+                    <td class="score-without">61.98</td>
+                    <td class="impact">13.96</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">11</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116361_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">12.38</td>
+                    <td class="score-without">16.40</td>
+                    <td class="impact">4.02</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">12</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116362_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">30.29</td>
+                    <td class="score-without">40.25</td>
+                    <td class="impact">9.96</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">13</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116363_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">42.29</td>
+                    <td class="score-without">23.11</td>
+                    <td class="impact">19.18</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">14</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116364_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">70.22</td>
+                    <td class="score-without">93.41</td>
+                    <td class="impact">23.19</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">15</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116365_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">91.83</td>
+                    <td class="score-without">89.17</td>
+                    <td class="impact">2.66</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">16</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116366_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">25.09</td>
+                    <td class="score-without">0.12</td>
+                    <td class="impact">24.97</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">17</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116368_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">41.98</td>
+                    <td class="score-without">55.96</td>
+                    <td class="impact">13.98</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">18</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116369_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">62.02</td>
+                    <td class="score-without">82.57</td>
+                    <td class="impact">20.55</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">19</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116370_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">27.75</td>
+                    <td class="score-without">6.25</td>
+                    <td class="impact">21.50</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">20</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116371_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">7.21</td>
+                    <td class="score-without">9.60</td>
+                    <td class="impact">2.39</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">21</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116372_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">46.17</td>
+                    <td class="score-without">28.24</td>
+                    <td class="impact">17.93</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">22</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116373_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">72.97</td>
+                    <td class="score-without">63.96</td>
+                    <td class="impact">9.01</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">23</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116374_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">63.99</td>
+                    <td class="score-without">52.00</td>
+                    <td class="impact">11.99</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">24</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116375_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">9.25</td>
+                    <td class="score-without">12.21</td>
+                    <td class="impact">2.96</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">25</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116388_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">37.45</td>
+                    <td class="score-without">16.68</td>
+                    <td class="impact">20.77</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">26</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116389_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">51.73</td>
+                    <td class="score-without">61.12</td>
+                    <td class="impact">9.39</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">27</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116390_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">15.80</td>
+                    <td class="score-without">4.36</td>
+                    <td class="impact">11.44</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">28</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116391_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">88.57</td>
+                    <td class="score-without">85.01</td>
+                    <td class="impact">3.56</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">29</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116392_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">29.08</td>
+                    <td class="score-without">5.52</td>
+                    <td class="impact">23.56</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">30</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116393_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">42.03</td>
+                    <td class="score-without">25.95</td>
+                    <td class="impact">16.08</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">31</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116394_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">69.14</td>
+                    <td class="score-without">66.08</td>
+                    <td class="impact">3.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">32</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116404_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">29.65</td>
+                    <td class="score-without">39.53</td>
+                    <td class="impact">9.88</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">33</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116405_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">37.25</td>
+                    <td class="score-without">19.48</td>
+                    <td class="impact">17.77</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">34</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116406_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">25.54</td>
+                    <td class="score-without">34.02</td>
+                    <td class="impact">8.48</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">35</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116407_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">29.98</td>
+                    <td class="score-without">10.67</td>
+                    <td class="impact">19.31</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">36</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116408_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">52.84</td>
+                    <td class="score-without">54.46</td>
+                    <td class="impact">1.62</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">37</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116409_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">25.41</td>
+                    <td class="score-without">0.57</td>
+                    <td class="impact">24.84</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">38</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116410_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">49.06</td>
+                    <td class="score-without">32.18</td>
+                    <td class="impact">16.88</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">39</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116412_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">30.50</td>
+                    <td class="score-without">7.36</td>
+                    <td class="impact">23.14</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">40</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116413_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">29.85</td>
+                    <td class="score-without">15.73</td>
+                    <td class="impact">14.12</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">41</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116414_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">46.50</td>
+                    <td class="score-without">61.84</td>
+                    <td class="impact">15.34</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">42</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116415_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">25.03</td>
+                    <td class="score-without">0.08</td>
+                    <td class="impact">24.95</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">43</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">116416_0_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">0.05</td>
+                    <td class="score-without">0.07</td>
+                    <td class="impact">0.02</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">44</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">117714_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">60.36</td>
+                    <td class="score-without">80.34</td>
+                    <td class="impact">19.98</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">45</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">117716_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">91.09</td>
+                    <td class="score-without">88.65</td>
+                    <td class="impact">2.44</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">46</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5663.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.51</td>
+                    <td class="score-without">99.93</td>
+                    <td class="impact">0.42</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">47</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5664.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">74.13</td>
+                    <td class="score-without">65.58</td>
+                    <td class="impact">8.55</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">48</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5665.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">97.75</td>
+                    <td class="score-without">97.00</td>
+                    <td class="impact">0.75</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">49</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5666.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.70</td>
+                    <td class="score-without">98.27</td>
+                    <td class="impact">0.43</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">50</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5667.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.84</td>
+                    <td class="score-without">99.78</td>
+                    <td class="impact">0.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">51</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5668.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">100.00</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">52</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5705.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.46</td>
+                    <td class="score-without">99.28</td>
+                    <td class="impact">0.18</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">53</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5706.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.24</td>
+                    <td class="score-without">98.99</td>
+                    <td class="impact">0.25</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">54</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5707.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.82</td>
+                    <td class="score-without">99.75</td>
+                    <td class="impact">0.07</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">55</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5708.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">96.18</td>
+                    <td class="score-without">94.91</td>
+                    <td class="impact">1.27</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">56</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5723.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">68.47</td>
+                    <td class="score-without">57.96</td>
+                    <td class="impact">10.51</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">57</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5724.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">86.99</td>
+                    <td class="score-without">82.66</td>
+                    <td class="impact">4.33</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">58</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5725.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.77</td>
+                    <td class="score-without">99.70</td>
+                    <td class="impact">0.07</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">59</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5726.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.86</td>
+                    <td class="score-without">99.81</td>
+                    <td class="impact">0.05</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">60</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5727.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">81.81</td>
+                    <td class="score-without">75.75</td>
+                    <td class="impact">6.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">61</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5728.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">95.77</td>
+                    <td class="score-without">95.19</td>
+                    <td class="impact">0.58</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">62</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5729.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.84</td>
+                    <td class="score-without">99.79</td>
+                    <td class="impact">0.05</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">63</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5730.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.65</td>
+                    <td class="score-without">99.54</td>
+                    <td class="impact">0.11</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">64</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5731.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.82</td>
+                    <td class="score-without">99.76</td>
+                    <td class="impact">0.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">65</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5732.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.44</td>
+                    <td class="score-without">99.25</td>
+                    <td class="impact">0.19</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">66</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5733.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.01</td>
+                    <td class="score-without">97.39</td>
+                    <td class="impact">0.62</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">67</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5734.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.18</td>
+                    <td class="score-without">97.58</td>
+                    <td class="impact">0.60</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">68</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5735.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.74</td>
+                    <td class="score-without">99.65</td>
+                    <td class="impact">0.09</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">69</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5736.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.48</td>
+                    <td class="score-without">99.31</td>
+                    <td class="impact">0.17</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">70</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5737.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.30</td>
+                    <td class="score-without">97.74</td>
+                    <td class="impact">0.56</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">71</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5738.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">88.51</td>
+                    <td class="score-without">84.68</td>
+                    <td class="impact">3.83</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">72</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5739.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">69.06</td>
+                    <td class="score-without">58.89</td>
+                    <td class="impact">10.17</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">73</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5740.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">66.82</td>
+                    <td class="score-without">55.77</td>
+                    <td class="impact">11.05</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">74</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5741.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.52</td>
+                    <td class="score-without">99.36</td>
+                    <td class="impact">0.16</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">75</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5742.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">75.92</td>
+                    <td class="score-without">67.91</td>
+                    <td class="impact">8.01</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">76</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5743.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.99</td>
+                    <td class="score-without">99.98</td>
+                    <td class="impact">0.01</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">77</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5744.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">97.03</td>
+                    <td class="score-without">96.04</td>
+                    <td class="impact">0.99</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">78</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5745.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.72</td>
+                    <td class="score-without">99.63</td>
+                    <td class="impact">0.09</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">79</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5746.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.96</td>
+                    <td class="score-without">99.95</td>
+                    <td class="impact">0.01</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">80</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5747.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">27.53</td>
+                    <td class="score-without">3.37</td>
+                    <td class="impact">24.16</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">81</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5748.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.97</td>
+                    <td class="score-without">99.97</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">82</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5749.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.19</td>
+                    <td class="score-without">98.92</td>
+                    <td class="impact">0.27</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">83</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5750.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.54</td>
+                    <td class="score-without">99.39</td>
+                    <td class="impact">0.15</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">84</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5751.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">79.57</td>
+                    <td class="score-without">83.45</td>
+                    <td class="impact">3.88</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">85</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5752.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">77.48</td>
+                    <td class="score-without">70.01</td>
+                    <td class="impact">7.47</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">86</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5753.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.76</td>
+                    <td class="score-without">99.69</td>
+                    <td class="impact">0.07</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">87</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5754.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">91.70</td>
+                    <td class="score-without">88.96</td>
+                    <td class="impact">2.74</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">88</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5755.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.90</td>
+                    <td class="score-without">99.87</td>
+                    <td class="impact">0.03</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">89</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5981.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.97</td>
+                    <td class="score-without">99.97</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">90</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5982.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.31</td>
+                    <td class="score-without">99.34</td>
+                    <td class="impact">0.03</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">91</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5996.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.52</td>
+                    <td class="score-without">99.37</td>
+                    <td class="impact">0.15</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">92</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5997.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.50</td>
+                    <td class="score-without">99.34</td>
+                    <td class="impact">0.16</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">93</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5998.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.51</td>
+                    <td class="score-without">99.34</td>
+                    <td class="impact">0.17</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">94</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">5999.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">95.16</td>
+                    <td class="score-without">93.54</td>
+                    <td class="impact">1.62</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">95</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">6000.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.89</td>
+                    <td class="score-without">99.85</td>
+                    <td class="impact">0.04</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">96</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">Add_a_subheading.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.47</td>
+                    <td class="score-without">99.80</td>
+                    <td class="impact">0.33</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">97</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ChatGPT Image 9 ก.พ. 2569 08_22_25.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.73</td>
+                    <td class="score-without">99.93</td>
+                    <td class="impact">0.20</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">98</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ChatGPT_Image_Sep_10_2025_07_50_46_PM.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.97</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.03</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">99</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">Generated_Image_September_10_2025_-_7_45PM_3.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">100.00</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">100</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">Khaochangphuak_06 (1)_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">9.99</td>
+                    <td class="score-without">13.03</td>
+                    <td class="impact">3.04</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">101</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">pagoda-1370346_1280_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">60.64</td>
+                    <td class="score-without">47.70</td>
+                    <td class="impact">12.94</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">102</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">temple-6567223_1280_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">32.55</td>
+                    <td class="score-without">23.34</td>
+                    <td class="impact">9.21</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">103</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">train-4362166_1280_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">15.24</td>
+                    <td class="score-without">8.68</td>
+                    <td class="impact">6.56</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">104</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (1).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">31.06</td>
+                    <td class="score-without">35.42</td>
+                    <td class="impact">4.36</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">105</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (1).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">96.30</td>
+                    <td class="score-without">95.08</td>
+                    <td class="impact">1.22</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">106</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (10).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">58.15</td>
+                    <td class="score-without">72.11</td>
+                    <td class="impact">13.96</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">107</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (11).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">74.99</td>
+                    <td class="score-without">99.47</td>
+                    <td class="impact">24.48</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">108</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (12).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">79.52</td>
+                    <td class="score-without">96.59</td>
+                    <td class="impact">17.07</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">109</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (13).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">73.50</td>
+                    <td class="score-without">92.05</td>
+                    <td class="impact">18.55</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">110</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (14).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">82.96</td>
+                    <td class="score-without">80.59</td>
+                    <td class="impact">2.37</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">111</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (15).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">29.30</td>
+                    <td class="score-without">23.50</td>
+                    <td class="impact">5.80</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">112</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (16).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">60.42</td>
+                    <td class="score-without">80.34</td>
+                    <td class="impact">19.92</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">113</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (17).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">92.68</td>
+                    <td class="score-without">90.25</td>
+                    <td class="impact">2.43</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">114</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (18).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">67.69</td>
+                    <td class="score-without">66.69</td>
+                    <td class="impact">1.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">115</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (19).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">61.59</td>
+                    <td class="score-without">49.32</td>
+                    <td class="impact">12.27</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">116</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (2).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">48.50</td>
+                    <td class="score-without">62.89</td>
+                    <td class="impact">14.39</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">117</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (2).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">98.18</td>
+                    <td class="score-without">97.58</td>
+                    <td class="impact">0.60</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">118</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (20).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">25.88</td>
+                    <td class="score-without">34.50</td>
+                    <td class="impact">8.62</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">119</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (21).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">73.61</td>
+                    <td class="score-without">80.01</td>
+                    <td class="impact">6.40</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">120</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (22).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">50.00</td>
+                    <td class="score-without">65.91</td>
+                    <td class="impact">15.91</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">121</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (23).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">79.65</td>
+                    <td class="score-without">73.08</td>
+                    <td class="impact">6.57</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">122</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (24).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">75.71</td>
+                    <td class="score-without">67.68</td>
+                    <td class="impact">8.03</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">123</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (25).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">68.70</td>
+                    <td class="score-without">87.49</td>
+                    <td class="impact">18.79</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">124</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (26).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">93.77</td>
+                    <td class="score-without">91.80</td>
+                    <td class="impact">1.97</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">125</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (27).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">84.83</td>
+                    <td class="score-without">81.16</td>
+                    <td class="impact">3.67</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">126</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (28).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">78.75</td>
+                    <td class="score-without">71.67</td>
+                    <td class="impact">7.08</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">127</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (29).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">74.34</td>
+                    <td class="score-without">98.66</td>
+                    <td class="impact">24.32</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">128</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (3).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">58.60</td>
+                    <td class="score-without">65.00</td>
+                    <td class="impact">6.40</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">129</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (3).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">86.65</td>
+                    <td class="score-without">82.23</td>
+                    <td class="impact">4.42</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">130</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (30).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">13.23</td>
+                    <td class="score-without">17.37</td>
+                    <td class="impact">4.14</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">131</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (31).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">68.01</td>
+                    <td class="score-without">89.94</td>
+                    <td class="impact">21.93</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">132</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (32).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">37.78</td>
+                    <td class="score-without">17.44</td>
+                    <td class="impact">20.34</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">133</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (33).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">43.33</td>
+                    <td class="score-without">32.32</td>
+                    <td class="impact">11.01</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">134</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (34).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">79.69</td>
+                    <td class="score-without">92.71</td>
+                    <td class="impact">13.02</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">135</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (35).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">26.97</td>
+                    <td class="score-without">3.67</td>
+                    <td class="impact">23.30</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">136</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (36).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">76.51</td>
+                    <td class="score-without">69.07</td>
+                    <td class="impact">7.44</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">137</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (37).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">86.11</td>
+                    <td class="score-without">86.03</td>
+                    <td class="impact">0.08</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">138</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (38).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">90.91</td>
+                    <td class="score-without">88.36</td>
+                    <td class="impact">2.55</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">139</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (39).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">87.80</td>
+                    <td class="score-without">83.74</td>
+                    <td class="impact">4.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">140</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (4).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">43.71</td>
+                    <td class="score-without">58.28</td>
+                    <td class="impact">14.57</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">141</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (4).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">96.23</td>
+                    <td class="score-without">94.97</td>
+                    <td class="impact">1.26</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">142</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (40).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">87.44</td>
+                    <td class="score-without">85.05</td>
+                    <td class="impact">2.39</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">143</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (41).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">35.67</td>
+                    <td class="score-without">47.51</td>
+                    <td class="impact">11.84</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">144</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (42).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">27.23</td>
+                    <td class="score-without">36.29</td>
+                    <td class="impact">9.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">145</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (43).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">59.25</td>
+                    <td class="score-without">79.00</td>
+                    <td class="impact">19.75</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">146</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (44).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">53.70</td>
+                    <td class="score-without">70.54</td>
+                    <td class="impact">16.84</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">147</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (45).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">44.94</td>
+                    <td class="score-without">59.75</td>
+                    <td class="impact">14.81</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">148</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (46).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">72.36</td>
+                    <td class="score-without">94.41</td>
+                    <td class="impact">22.05</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">149</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (47).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">82.30</td>
+                    <td class="score-without">96.30</td>
+                    <td class="impact">14.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">150</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (48).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">37.57</td>
+                    <td class="score-without">50.05</td>
+                    <td class="impact">12.48</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">151</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (49).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">2.37</td>
+                    <td class="score-without">3.15</td>
+                    <td class="impact">0.78</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">152</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (5).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">94.62</td>
+                    <td class="score-without">97.05</td>
+                    <td class="impact">2.43</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">153</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (5).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">99.23</td>
+                    <td class="score-without">98.97</td>
+                    <td class="impact">0.26</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">154</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (50).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">33.74</td>
+                    <td class="score-without">44.98</td>
+                    <td class="impact">11.24</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">155</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (51).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">59.94</td>
+                    <td class="score-without">79.91</td>
+                    <td class="impact">19.97</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">156</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (52).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">49.67</td>
+                    <td class="score-without">66.23</td>
+                    <td class="impact">16.56</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">157</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (53).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">5.54</td>
+                    <td class="score-without">7.38</td>
+                    <td class="impact">1.84</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">158</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (54).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">55.58</td>
+                    <td class="score-without">74.11</td>
+                    <td class="impact">18.53</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">159</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (55).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">7.15</td>
+                    <td class="score-without">9.53</td>
+                    <td class="impact">2.38</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">160</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (56).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">72.24</td>
+                    <td class="score-without">96.24</td>
+                    <td class="impact">24.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">161</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (57).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">2.86</td>
+                    <td class="score-without">3.74</td>
+                    <td class="impact">0.88</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">162</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (58).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">36.63</td>
+                    <td class="score-without">48.83</td>
+                    <td class="impact">12.20</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">163</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (59).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">28.98</td>
+                    <td class="score-without">38.64</td>
+                    <td class="impact">9.66</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">164</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (6).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">97.54</td>
+                    <td class="score-without">96.89</td>
+                    <td class="impact">0.65</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">165</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (6).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">98.89</td>
+                    <td class="score-without">98.52</td>
+                    <td class="impact">0.37</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">166</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (60).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">38.22</td>
+                    <td class="score-without">50.94</td>
+                    <td class="impact">12.72</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">167</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (61).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">65.23</td>
+                    <td class="score-without">86.97</td>
+                    <td class="impact">21.74</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">168</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (62).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">72.64</td>
+                    <td class="score-without">96.85</td>
+                    <td class="impact">24.21</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">169</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (63).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">46.80</td>
+                    <td class="score-without">62.40</td>
+                    <td class="impact">15.60</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">170</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (64).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">61.23</td>
+                    <td class="score-without">81.62</td>
+                    <td class="impact">20.39</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">171</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (65).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">50.84</td>
+                    <td class="score-without">67.79</td>
+                    <td class="impact">16.95</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">172</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (66).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">32.15</td>
+                    <td class="score-without">32.26</td>
+                    <td class="impact">0.11</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">173</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (67).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">45.65</td>
+                    <td class="score-without">60.35</td>
+                    <td class="impact">14.70</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">174</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (68).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">23.86</td>
+                    <td class="score-without">31.81</td>
+                    <td class="impact">7.95</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">175</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (69).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">41.35</td>
+                    <td class="score-without">55.10</td>
+                    <td class="impact">13.75</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">176</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (7).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">91.63</td>
+                    <td class="score-without">95.41</td>
+                    <td class="impact">3.78</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">177</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (7).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">97.27</td>
+                    <td class="score-without">96.36</td>
+                    <td class="impact">0.91</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">178</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (70).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">91.80</td>
+                    <td class="score-without">91.15</td>
+                    <td class="impact">0.65</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">179</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (71).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">68.51</td>
+                    <td class="score-without">91.34</td>
+                    <td class="impact">22.83</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">180</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (72).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">63.33</td>
+                    <td class="score-without">84.44</td>
+                    <td class="impact">21.11</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">181</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (73).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">36.30</td>
+                    <td class="score-without">48.40</td>
+                    <td class="impact">12.10</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">182</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (74).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">29.06</td>
+                    <td class="score-without">38.75</td>
+                    <td class="impact">9.69</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">183</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (75).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">68.65</td>
+                    <td class="score-without">90.89</td>
+                    <td class="impact">22.24</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">184</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (76).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">65.38</td>
+                    <td class="score-without">87.17</td>
+                    <td class="impact">21.79</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">185</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (77).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">52.73</td>
+                    <td class="score-without">70.25</td>
+                    <td class="impact">17.52</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">186</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (78).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">69.76</td>
+                    <td class="score-without">91.77</td>
+                    <td class="impact">22.01</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">187</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (79).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">29.68</td>
+                    <td class="score-without">39.57</td>
+                    <td class="impact">9.89</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">188</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (8).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">76.46</td>
+                    <td class="score-without">99.34</td>
+                    <td class="impact">22.88</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">189</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (8).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">86.83</td>
+                    <td class="score-without">82.44</td>
+                    <td class="impact">4.39</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">190</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (80).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">51.70</td>
+                    <td class="score-without">68.66</td>
+                    <td class="impact">16.96</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">191</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (81).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">62.01</td>
+                    <td class="score-without">68.03</td>
+                    <td class="impact">6.02</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">192</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (82).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">61.89</td>
+                    <td class="score-without">54.55</td>
+                    <td class="impact">7.34</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">193</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (83).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">47.16</td>
+                    <td class="score-without">52.11</td>
+                    <td class="impact">4.95</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">194</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (84).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">54.75</td>
+                    <td class="score-without">39.68</td>
+                    <td class="impact">15.07</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">195</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (85).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">54.13</td>
+                    <td class="score-without">71.37</td>
+                    <td class="impact">17.24</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">196</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (86).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">73.10</td>
+                    <td class="score-without">91.10</td>
+                    <td class="impact">18.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">197</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (87).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">28.70</td>
+                    <td class="score-without">35.78</td>
+                    <td class="impact">7.08</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">198</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (88).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">99.22</td>
+                    <td class="score-without">98.99</td>
+                    <td class="impact">0.23</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">199</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (89).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">24.91</td>
+                    <td class="score-without">33.21</td>
+                    <td class="impact">8.30</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">200</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (9).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">88.34</td>
+                    <td class="score-without">97.68</td>
+                    <td class="impact">9.34</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">201</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (9).png</td>
+                    <td>🟩 Real</td>
+                    <td class="score">78.80</td>
+                    <td class="score-without">71.73</td>
+                    <td class="impact">7.07</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">202</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (90).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">58.95</td>
+                    <td class="score-without">74.82</td>
+                    <td class="impact">15.87</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">203</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">TT (91).jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">83.10</td>
+                    <td class="score-without">77.47</td>
+                    <td class="impact">5.63</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">204</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">unnamed.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">65.54</td>
+                    <td class="score-without">54.14</td>
+                    <td class="impact">11.40</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">205</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">waterfall-9865189_1280_T.jpg</td>
+                    <td>🟩 Real</td>
+                    <td class="score">1.22</td>
+                    <td class="score-without">1.54</td>
+                    <td class="impact">0.32</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">206</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">y65n37.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">96.89</td>
+                    <td class="score-without">99.98</td>
+                    <td class="impact">3.09</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">207</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yarm2z.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">89.02</td>
+                    <td class="score-without">86.57</td>
+                    <td class="impact">2.45</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">208</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yaxjuu.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.09</td>
+                    <td class="score-without">98.88</td>
+                    <td class="impact">0.21</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">209</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yazi2t.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">85.74</td>
+                    <td class="score-without">88.48</td>
+                    <td class="impact">2.74</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">210</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ybsq37.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">94.87</td>
+                    <td class="score-without">94.75</td>
+                    <td class="impact">0.12</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">211</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ybswfm.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.27</td>
+                    <td class="score-without">99.70</td>
+                    <td class="impact">1.43</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">212</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ybwu2w.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.91</td>
+                    <td class="score-without">99.95</td>
+                    <td class="impact">0.04</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">213</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ycld75.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.82</td>
+                    <td class="score-without">99.85</td>
+                    <td class="impact">0.03</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">214</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yclf4h.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.54</td>
+                    <td class="score-without">99.65</td>
+                    <td class="impact">0.11</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">215</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ydcx95.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">66.19</td>
+                    <td class="score-without">71.67</td>
+                    <td class="impact">5.48</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">216</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ydfo53.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.87</td>
+                    <td class="score-without">99.82</td>
+                    <td class="impact">0.05</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">217</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yelnzb.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.30</td>
+                    <td class="score-without">99.93</td>
+                    <td class="impact">1.63</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">218</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yenffy.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">83.62</td>
+                    <td class="score-without">79.13</td>
+                    <td class="impact">4.49</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">219</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yev8d2.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">77.84</td>
+                    <td class="score-without">99.20</td>
+                    <td class="impact">21.36</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">220</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yf2b76.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">90.62</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">9.38</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">221</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yf3120.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.48</td>
+                    <td class="score-without">99.74</td>
+                    <td class="impact">0.26</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">222</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yfni3j.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">96.42</td>
+                    <td class="score-without">99.94</td>
+                    <td class="impact">3.52</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">223</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yfxlzf.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">94.52</td>
+                    <td class="score-without">99.96</td>
+                    <td class="impact">5.44</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">224</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yfzl0s.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.96</td>
+                    <td class="score-without">99.99</td>
+                    <td class="impact">0.03</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">225</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yg6i6g.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.50</td>
+                    <td class="score-without">99.91</td>
+                    <td class="impact">1.41</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">226</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ygu54w.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.38</td>
+                    <td class="score-without">99.98</td>
+                    <td class="impact">0.60</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">227</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yh0tlg.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">85.35</td>
+                    <td class="score-without">99.82</td>
+                    <td class="impact">14.47</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">228</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yh4ehl.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">76.78</td>
+                    <td class="score-without">98.72</td>
+                    <td class="impact">21.94</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">229</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yh7s6d.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">76.94</td>
+                    <td class="score-without">99.97</td>
+                    <td class="impact">23.03</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">230</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yh7vk4.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">95.49</td>
+                    <td class="score-without">98.37</td>
+                    <td class="impact">2.88</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">231</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yhs4c8.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.98</td>
+                    <td class="score-without">99.97</td>
+                    <td class="impact">0.01</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">232</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yhv313.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">81.10</td>
+                    <td class="score-without">99.40</td>
+                    <td class="impact">18.30</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">233</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yi62rg.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">81.17</td>
+                    <td class="score-without">79.72</td>
+                    <td class="impact">1.45</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">234</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yia1xm.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">67.78</td>
+                    <td class="score-without">59.76</td>
+                    <td class="impact">8.02</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">235</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yiq82f.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.99</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.01</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">236</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yjkiqu.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.16</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.84</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">237</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yjxryz.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.98</td>
+                    <td class="score-without">99.98</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">238</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yl1ffi.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">78.58</td>
+                    <td class="score-without">99.55</td>
+                    <td class="impact">20.97</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">239</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yl1p74.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">97.25</td>
+                    <td class="score-without">99.31</td>
+                    <td class="impact">2.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">240</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ylhedu.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.80</td>
+                    <td class="score-without">99.98</td>
+                    <td class="impact">0.18</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">241</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ylubno.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.81</td>
+                    <td class="score-without">99.94</td>
+                    <td class="impact">0.13</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">242</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ylvvhe.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">100.00</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">243</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ym5nez.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">74.32</td>
+                    <td class="score-without">89.40</td>
+                    <td class="impact">15.08</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">244</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ymalhf.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.65</td>
+                    <td class="score-without">99.94</td>
+                    <td class="impact">0.29</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">245</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ymvb6s.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">75.45</td>
+                    <td class="score-without">99.78</td>
+                    <td class="impact">24.33</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">246</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yn6rof.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.89</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.11</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">247</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ynmpfm.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.39</td>
+                    <td class="score-without">99.78</td>
+                    <td class="impact">0.39</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">248</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yo2r38.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.37</td>
+                    <td class="score-without">99.85</td>
+                    <td class="impact">1.48</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">249</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yonx6b.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">92.73</td>
+                    <td class="score-without">99.95</td>
+                    <td class="impact">7.22</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">250</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yoofoi.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">95.27</td>
+                    <td class="score-without">95.22</td>
+                    <td class="impact">0.05</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">251</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yos4cy.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.47</td>
+                    <td class="score-without">99.98</td>
+                    <td class="impact">0.51</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">252</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yosqkk.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.15</td>
+                    <td class="score-without">98.89</td>
+                    <td class="impact">0.26</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">253</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yotxg7.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">79.03</td>
+                    <td class="score-without">72.28</td>
+                    <td class="impact">6.75</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">254</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yozyl9.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">96.26</td>
+                    <td class="score-without">99.75</td>
+                    <td class="impact">3.49</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">255</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yp1nxg.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.59</td>
+                    <td class="score-without">99.47</td>
+                    <td class="impact">0.12</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">256</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yp1s16.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.74</td>
+                    <td class="score-without">99.97</td>
+                    <td class="impact">0.23</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">257</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yp5cmd.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">71.34</td>
+                    <td class="score-without">64.57</td>
+                    <td class="impact">6.77</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">258</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yp60lp.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.87</td>
+                    <td class="score-without">99.94</td>
+                    <td class="impact">0.07</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">259</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yp61l3.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">33.82</td>
+                    <td class="score-without">11.76</td>
+                    <td class="impact">22.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">260</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yp96ph.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">75.00</td>
+                    <td class="score-without">99.81</td>
+                    <td class="impact">24.81</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">261</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypb8u2.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">74.93</td>
+                    <td class="score-without">98.83</td>
+                    <td class="impact">23.90</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">262</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypc543.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">76.83</td>
+                    <td class="score-without">99.96</td>
+                    <td class="impact">23.13</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">263</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypcwic.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">96.62</td>
+                    <td class="score-without">99.56</td>
+                    <td class="impact">2.94</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">264</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypde0q.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.50</td>
+                    <td class="score-without">99.40</td>
+                    <td class="impact">0.10</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">265</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypdr1l.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">94.89</td>
+                    <td class="score-without">98.98</td>
+                    <td class="impact">4.09</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">266</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ype507.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.22</td>
+                    <td class="score-without">99.79</td>
+                    <td class="impact">0.57</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">267</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypehr4.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.92</td>
+                    <td class="score-without">99.90</td>
+                    <td class="impact">0.02</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">268</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypftxz.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.96</td>
+                    <td class="score-without">99.99</td>
+                    <td class="impact">0.03</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">269</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypgml5.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.35</td>
+                    <td class="score-without">98.00</td>
+                    <td class="impact">0.35</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">270</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypjzgt.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.69</td>
+                    <td class="score-without">99.59</td>
+                    <td class="impact">0.10</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">271</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypl628.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">97.76</td>
+                    <td class="score-without">97.01</td>
+                    <td class="impact">0.75</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">272</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypopd3.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.83</td>
+                    <td class="score-without">99.77</td>
+                    <td class="impact">0.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">273</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yppm6w.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.33</td>
+                    <td class="score-without">99.76</td>
+                    <td class="impact">0.43</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">274</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypqq0r.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">97.99</td>
+                    <td class="score-without">97.39</td>
+                    <td class="impact">0.60</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">275</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypqrhe.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.96</td>
+                    <td class="score-without">99.96</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">276</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypszwf.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.65</td>
+                    <td class="score-without">98.23</td>
+                    <td class="impact">0.42</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">277</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypt6io.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.52</td>
+                    <td class="score-without">99.26</td>
+                    <td class="impact">0.74</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">278</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yptdkq.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.82</td>
+                    <td class="score-without">99.82</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">279</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypv4wt.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.08</td>
+                    <td class="score-without">98.77</td>
+                    <td class="impact">0.31</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">280</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypvbvg.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.88</td>
+                    <td class="score-without">99.83</td>
+                    <td class="impact">0.05</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">281</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypvjqo.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.80</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.20</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">282</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypxzqp.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">93.57</td>
+                    <td class="score-without">91.43</td>
+                    <td class="impact">2.14</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">283</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">ypz5hh.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.41</td>
+                    <td class="score-without">99.22</td>
+                    <td class="impact">0.19</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">284</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yq175l.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.71</td>
+                    <td class="score-without">99.64</td>
+                    <td class="impact">0.07</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">285</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yq1ttc.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.70</td>
+                    <td class="score-without">99.61</td>
+                    <td class="impact">0.09</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">286</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yq7ds2.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.88</td>
+                    <td class="score-without">99.97</td>
+                    <td class="impact">0.09</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">287</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yq8sb2.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.15</td>
+                    <td class="score-without">99.97</td>
+                    <td class="impact">1.82</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">288</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yqbqur.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">98.23</td>
+                    <td class="score-without">97.93</td>
+                    <td class="impact">0.30</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">289</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yqddup.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">95.49</td>
+                    <td class="score-without">99.30</td>
+                    <td class="impact">3.81</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">290</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yqhmuk.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.96</td>
+                    <td class="score-without">100.00</td>
+                    <td class="impact">0.04</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">291</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yqlnhl.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.71</td>
+                    <td class="score-without">99.65</td>
+                    <td class="impact">0.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">292</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yqqn3m.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.99</td>
+                    <td class="score-without">99.99</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">293</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yr78j8.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.84</td>
+                    <td class="score-without">99.90</td>
+                    <td class="impact">0.06</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">294</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yr7tzn.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">93.76</td>
+                    <td class="score-without">96.55</td>
+                    <td class="impact">2.79</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">295</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yr88l0.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">80.34</td>
+                    <td class="score-without">73.80</td>
+                    <td class="impact">6.54</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">296</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yrc0xj.png</td>
+                    <td>🔴 AI</td>
+                    <td class="score">99.98</td>
+                    <td class="score-without">99.98</td>
+                    <td class="impact">0.00</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">297</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yrj5qu.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">90.47</td>
+                    <td class="score-without">87.33</td>
+                    <td class="impact">3.14</td>
+                </tr>
+
+                <tr>
+                    <td class="row-num">298</td>
+                    <td style="text-align: left; font-family: monospace; font-size: 0.85em;">yrky02.jpg</td>
+                    <td>🔴 AI</td>
+                    <td class="score">75.57</td>
+                    <td class="score-without">67.43</td>
+                    <td class="impact">8.14</td>
+                </tr>
+
+            </tbody>
+        </table>
+
+        <div class="notes">
+            <h4>📊 สูตรการคำนวณ:</h4>
+            <ul style="margin-left: 20px;">
+                <li><strong>Score All</strong> = Baseline (ใช้ทั้ง 4 model)</li>
+                <li><strong>Score Without Freq</strong> = คะแนน ensemble เมื่อปิดโมเดล Frequency (คำนวณใหม่จากโมเดลที่เหลือ)</li>
+                <li><strong>Impact</strong> = |Score All - Score Without Freq|</li>
+            </ul>
+        </div>
+
+        <div class="notes">
+            <h4>💡 การอ่านข้อมูล:</h4>
+            <ul style="margin-left: 20px;">
+                <li>ยิ่ง Impact สูง แสดงว่า Frequency ส่งผลต่อคะแนน ensemble มาก</li>
+                <li>Impact ในไฟล์ผลลัพธ์เป็นค่าสัมบูรณ์ จึงไม่บอกทิศทางว่าปิดแล้วคะแนนเพิ่มหรือลด (ดูได้จาก Score Without)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function downloadCSV() {
+            const table = document.getElementById('resultTable');
+            let csv = [];
+            
+            // Headers
+            const headers = [];
+            table.querySelectorAll('thead th').forEach(th => {
+                headers.push('"' + th.textContent.replace(/\n/g, ' ') + '"');
+            });
+            csv.push(headers.join(','));
+            
+            // Rows
+            table.querySelectorAll('tbody tr').forEach(tr => {
+                const row = [];
+                tr.querySelectorAll('td').forEach(td => {
+                    row.push('"' + td.textContent.trim() + '"');
+                });
+                csv.push(row.join(','));
+            });
+            
+            // Download
+            const csvContent = csv.join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'model_importance_frequency_report.csv';
+            link.click();
+        }
+    </script>
+</body>
+</html>

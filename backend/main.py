@@ -141,6 +141,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
+    import threading
     logger.info("🚀 Starting backend server...")
     logger.info(f"Python working directory: {os.getcwd()}")
     logger.info(f"TORCH_AVAILABLE: {TORCH_AVAILABLE}")
@@ -160,12 +161,17 @@ async def startup_event():
         pass
     
     if MODELS_DOWNLOAD_AVAILABLE:
-        try:
-            logger.info("⏳ Downloading model files (server will accept requests after download completes)...")
-            ensure_models_exist()
-            logger.info("✓ All models downloaded successfully!")
-        except Exception as e:
-            logger.warning(f"⚠️ Model download failed: {e}")
+        def download_in_background():
+            try:
+                logger.info("Background: Checking for model files...")
+                ensure_models_exist()
+                logger.info("Background: ✓ Models available!")
+            except Exception as e:
+                logger.warning(f"Background: Model download failed: {e}")
+        
+        thread = threading.Thread(target=download_in_background, daemon=True)
+        thread.start()
+        logger.info("Model download started in background thread")
     
     logger.info("✓ Backend ready (accepting requests)!")
 
@@ -192,15 +198,12 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 
 ENSEMBLE_METHOD = "weighted_average"  
 
-# Toggle pixel model via env var: set ENABLE_PIXEL_MODEL=true on Railway when upgrading RAM
-ENABLE_PIXEL_MODEL = os.getenv("ENABLE_PIXEL_MODEL", "false").lower() == "true"
-
 
 MODEL_WEIGHTS = {
-    "ela": 0.24,
-    "pixel": 0.16,
-    "frequency": 0.38,
-    "xception": 0.22
+    "ela": 0.22,
+    "pixel": 0.19,
+    "frequency": 0.39,
+    "xception": 0.20
 }
 
 _model: Optional[object] = None
@@ -213,14 +216,6 @@ _stacking_checkpoint: Optional[dict] = None
 _analyze_lock = None
 
 def _force_memory_release():
-    """Force Python GC + glibc to return freed memory to OS.
-    
-    Python's memory allocator (pymalloc) keeps freed heap pages in internal
-    free-lists. gc.collect() frees Python objects, but glibc's malloc doesn't
-    return those pages to the OS. malloc_trim(0) forces glibc to release
-    freed memory back to the OS — this is critical in containers with
-    limited RAM (~512MB-1GB).
-    """
     gc.collect()
     gc.collect()  
     try:
@@ -230,11 +225,6 @@ def _force_memory_release():
         pass  
 
 def _unload_model(name):
-    """Unload a specific cached model to free memory.
-    
-    With limited RAM (~512MB-1GB), we can't keep all 4 models in memory.
-    Unloading after each inference allows sequential model usage.
-    """
     global _model, _pixel_model, _freq_model, _xception_model
     if name == 'ela':
         _model = None
@@ -248,12 +238,6 @@ def _unload_model(name):
     logger.debug(f"Unloaded {name} model to free memory")
 
 def _get_container_memory():
-    """Get container memory limit and usage from cgroups (works in Docker/Railway).
-    
-    /proc/meminfo shows HOST memory, not container limit.
-    Must read cgroup files for actual container memory.
-    Returns (limit_mb, usage_mb, available_mb) or (None, None, None).
-    """
     try:
         with open('/sys/fs/cgroup/memory.max', 'r') as f:
             limit = f.read().strip()
@@ -830,9 +814,6 @@ async def analyze_image(image_path: str) -> dict:
                         "real_prob": p * 100.0
                     }
                     logger.info(f"Xception: {xcep_ai_prob:.2f}% AI")
-                else:
-                    logger.warning("Xception model not available (file not found or failed to load)")
-                    results["models"]["xception"] = {"error": "Model file not found or failed to load"}
             except Exception as e:
                 logger.error(f"Xception model error: {e}")
                 results["models"]["xception"] = {"error": str(e)}
@@ -849,7 +830,7 @@ async def analyze_image(image_path: str) -> dict:
             limit_mb, usage_mb, avail_mb = _get_container_memory()
             if avail_mb is not None:
                 logger.info(f"Container memory before Frequency: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
-                if avail_mb < 300:
+                if avail_mb < 500:
                     logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Frequency model to avoid OOM")
                     _skip_frequency = True
 
@@ -893,11 +874,26 @@ async def analyze_image(image_path: str) -> dict:
             _unload_model('frequency')
             _log_memory('after Frequency unload')
         
-            # Pixel model controlled by ENABLE_PIXEL_MODEL env var
-            # Set ENABLE_PIXEL_MODEL=true on Railway when upgrading to more RAM
-            if not ENABLE_PIXEL_MODEL:
-                results["models"]["pixel"] = {"error": "Disabled (set ENABLE_PIXEL_MODEL=true to enable)"}
-                logger.info("Pixel model skipped (ENABLE_PIXEL_MODEL=false)")
+            _skip_pixel = False
+            limit_mb, usage_mb, avail_mb = _get_container_memory()
+            if avail_mb is not None:
+                logger.info(f"Container memory before Pixel: {usage_mb:.0f}MB / {limit_mb:.0f}MB (free: {avail_mb:.0f}MB)")
+                if avail_mb < 350:
+                    logger.warning(f"Low container memory ({avail_mb:.0f}MB free), skipping Pixel model to avoid OOM")
+                    _skip_pixel = True
+            else:
+                try:
+                    with open('/proc/meminfo', 'r') as f:
+                        for line in f:
+                            if 'MemAvailable' in line:
+                                host_avail = int(line.split()[1]) / 1024
+                                logger.info(f"Host memory available: {host_avail:.0f}MB (container limit unknown)")
+                                break
+                except Exception:
+                    pass
+            
+            if _skip_pixel:
+                results["models"]["pixel"] = {"error": "Skipped (insufficient memory)"}
             else:
                 try:
                     model = load_pixel_model()
@@ -928,14 +924,15 @@ async def analyze_image(image_path: str) -> dict:
                 except Exception as e:
                     logger.error(f"Pixel model error: {e}")
                     results["models"]["pixel"] = {"error": str(e)}
-                finally:
-                    model = None
-                    try:
-                        del pix_tensor, rgb_tensor, out, proba, pix_img
-                    except NameError:
-                        pass
-                    _unload_model('pixel')
-                    _log_memory('after Pixel unload')
+
+            # Drop ALL references from Pixel step
+            model = pix_img = None
+            try:
+                del pix_tensor, rgb_tensor, out, proba
+            except NameError:
+                pass
+            _unload_model('pixel')
+            _log_memory('after Pixel unload')
         
             logger.info(f"Attempting ensemble method: {ENSEMBLE_METHOD}")
         
@@ -1296,7 +1293,7 @@ async def metadata_analysis_endpoint(image: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="กรุณาอัปโหลดไฟล์รูปภาพเฉพาะ (jpeg, jpg, png เท่านั้น)")
     contents = await image.read()
     if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="ขนาดไฟล์ต้องไม่เกิน 20MB")
+        raise HTTPException(status_code=400, detail="ขนาดไฟล์ต้องไม่เกิน 10MB")
     result = metadata_analysis(contents)
     return {'success': True, 'result': result}
 
@@ -1315,7 +1312,7 @@ async def analyze_image_endpoint(image: UploadFile = File(...), force: Optional[
         if len(contents) > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=400,
-                detail="ขนาดไฟล์ต้องไม่เกิน 20MB"
+                detail="ขนาดไฟล์ต้องไม่เกิน 10MB"
             )
 
 
@@ -1363,7 +1360,7 @@ async def analyze_image_endpoint(image: UploadFile = File(...), force: Optional[
                     "model_type": "Weighted Average Ensemble (ELA + Pixel + Frequency + Xception)"
                 },
                 "individual_models": models,
-                "ensemble_method": "weight_stacking",
+                "ensemble_method": "weight_average",
                 "ensemble_weights": {
                     "ela": MODEL_WEIGHTS["ela"],
                     "pixel": MODEL_WEIGHTS["pixel"],
@@ -1404,7 +1401,7 @@ async def test_model_importance(image: UploadFile = File(...)):
     
     contents = await image.read()
     if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="ขนาดไฟล์ต้องไม่เกิน 20MB")
+        raise HTTPException(status_code=400, detail="ขนาดไฟล์ต้องไม่เกิน 10MB")
     
     try:
         if not TORCH_AVAILABLE:

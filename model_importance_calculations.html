@@ -1,0 +1,3096 @@
+
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Model Importance - Detailed Calculations</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2em;
+        }
+        .formula-section {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            font-family: 'Courier New', monospace;
+        }
+        .formula-title {
+            color: #667eea;
+            font-size: 1.1em;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .formula {
+            background: #1a252f;
+            padding: 15px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 10px;
+            overflow-x: auto;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+        .calculation {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .calc-box {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .calc-box h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        .calc-steps {
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            line-height: 1.8;
+            font-family: 'Courier New', monospace;
+        }
+        .step {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .step-title {
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .step-content {
+            color: #333;
+            margin-left: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        th {
+            padding: 12px;
+            text-align: center;
+            font-weight: 600;
+            border: 1px solid #ddd;
+        }
+        td {
+            padding: 10px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+        tbody tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tbody tr:hover {
+            background-color: #f0f0f0;
+        }
+        .copy-section {
+            background: #e8f4f8;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border-left: 4px solid #2196F3;
+        }
+        .copy-title {
+            font-weight: bold;
+            color: #2196F3;
+            margin-bottom: 10px;
+        }
+        .copy-content {
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+            user-select: all;
+            cursor: pointer;
+            border: 1px solid #2196F3;
+            position: relative;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            padding: 5px 10px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        .copy-btn:hover {
+            background: #1976D2;
+        }
+        .impact-table-container {
+            overflow-x: auto;
+            margin-bottom: 30px;
+        }
+        .model-comparison {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .model-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .model-card h4 {
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+        .model-card .value {
+            font-size: 1.8em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .model-card .weight {
+            font-size: 1.3em;
+            opacity: 0.9;
+        }
+        @media print {
+            body {
+                background: white;
+            }
+            .container {
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Model Importance - Detailed Calculations</h1>
+        
+        <!-- Formula Section -->
+        <div class="formula-section">
+            <div class="formula-title">📐 สูตรการคำนวณ</div>
+            
+            <div class="formula">
+                <strong>Average Impact (เฉพาะ Frequency):</strong><br/>
+                Avg Impact = (1/n) × Σ(Score_all - Score_without_freq)<br/>
+                Avg Impact = (1/300) × (0.06 + 0.47 + 0.13 + 10.32 + 0.08 + ... + 8.14)
+            </div>
+            
+            <div class="formula">
+                <strong>Raw Weight (Importance %):</strong><br/>
+                Raw Weight_frequency = (Impact_frequency / Σ Impact) × 100%<br/>
+                Raw Weight_frequency = 7.3485 / 21.2055 × 100%
+            </div>
+        </div>
+        
+        <!-- Calculation Steps -->
+        <div class="calculation">
+            <div class="calc-box">
+                <h3>🔢 Step 1: Calculate Average Impact (Frequency)</h3>
+                <div class="calc-steps">
+                    <div class="step">
+                        <div class="step-title">Collect all Frequency impacts:</div>
+                        <div class="step-content">
+                            0.06, 0.47, 0.13, 10.32, 0.08, 17.60, 15.49, 7.78, 19.20, 13.96, ... (300 samples)
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-title">Sum all impacts:</div>
+                        <div class="step-content">
+                            Σ = 2189.86
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-title">Divide by count:</div>
+                        <div class="step-content">
+                            2189.86 ÷ 300 = <br/>
+                            <strong>7.3485</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="calc-box">
+                <h3>📈 Step 2: Calculate Raw Weight</h3>
+                <div class="calc-steps">
+                    <div class="step">
+                        <div class="step-title">Get all average impacts:</div>
+                        <div class="step-content">
+                            Frequency: 7.3485<br/>
+                            Pixel: 5.0353<br/>
+                            ELA: 4.5904<br/>
+                            Xception: 4.2313
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-title">Sum total impact:</div>
+                        <div class="step-content">
+                            Total = 21.2055
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-title">Calculate weight:</div>
+                        <div class="step-content">
+                            7.3485 ÷ 21.2055 × 100% = <br/>
+                            <strong>34.65%</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Model Comparison -->
+        <h2 style="margin-bottom: 20px; color: #333;">🏆 Model Importance Ranking</h2>
+        <div class="model-comparison">
+            <div class="model-card">
+                <h4>1️⃣ FREQUENCY</h4>
+                <div class="value">7.3485</div>
+                <div class="weight">34.65%</div>
+            </div>
+            <div class="model-card">
+                <h4>2️⃣ PIXEL</h4>
+                <div class="value">5.0353</div>
+                <div class="weight">23.75%</div>
+            </div>
+            <div class="model-card">
+                <h4>3️⃣ ELA</h4>
+                <div class="value">4.5904</div>
+                <div class="weight">21.65%</div>
+            </div>
+            <div class="model-card">
+                <h4>4️⃣ XCEPTION</h4>
+                <div class="value">4.2313</div>
+                <div class="weight">19.95%</div>
+            </div>
+        </div>
+        
+        <!-- Summary Table -->
+        <h2 style="margin-bottom: 20px; color: #333;">📋 Summary Table</h2>
+        <div class="impact-table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Average Impact</th>
+                        <th>Weight (%)</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td><strong>FREQUENCY</strong></td>
+                        <td>7.3485</td>
+                        <td>34.65%</td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>PIXEL</strong></td>
+                        <td>5.0353</td>
+                        <td>23.75%</td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>ELA</strong></td>
+                        <td>4.5904</td>
+                        <td>21.65%</td>
+                    </tr>
+
+                    <tr>
+                        <td><strong>XCEPTION</strong></td>
+                        <td>4.2313</td>
+                        <td>19.95%</td>
+                    </tr>
+
+                    <tr style="background: #f0f0f0; font-weight: bold;">
+                        <td>TOTAL</td>
+                        <td>21.2055</td>
+                        <td>100.00%</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Copy Section -->
+        <div class="copy-section">
+            <div class="copy-title">📋 Copy These Values for Your Report:</div>
+            <div class="copy-content" onclick="navigator.clipboard.writeText(this.innerText); alert('Copied!');">
+Average Impact (Frequency) = 7.3485
+Raw Weight (Frequency) = 34.65%
+
+Average Impact (Pixel) = 5.0353
+Raw Weight (Pixel) = 23.75%
+
+Average Impact (ELA) = 4.5904
+Raw Weight (ELA) = 21.65%
+
+Average Impact (Xception) = 4.2313
+Raw Weight (Xception) = 19.95%
+
+Total Impact = 21.2055
+            </div>
+            <p style="margin-top: 10px; color: #666; font-size: 0.9em;">💡 Click on the box above to copy all values</p>
+        </div>
+        
+        <!-- Frequency Impact Details -->
+        <h2 style="margin-bottom: 20px; color: #333;">📊 Frequency Impact Details (All 300 Samples)</h2>
+        <div class="impact-table-container">
+            <table id="detailTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Image</th>
+                        <th>Type</th>
+                        <th>Score All</th>
+                        <th>Score Without Freq</th>
+                        <th>Frequency Impact</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>1</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">0082_T.jpg</td>
+                        <td>Real</td>
+                        <td>0.28</td>
+                        <td>0.34</td>
+                        <td><strong>0.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>2</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">0083_T.jpg</td>
+                        <td>Real</td>
+                        <td>1.75</td>
+                        <td>2.22</td>
+                        <td><strong>0.47</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>3</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">0084_T.jpg</td>
+                        <td>Real</td>
+                        <td>0.39</td>
+                        <td>0.52</td>
+                        <td><strong>0.13</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>4</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">0085_T.jpg</td>
+                        <td>Real</td>
+                        <td>32.04</td>
+                        <td>42.36</td>
+                        <td><strong>10.32</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>5</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">0086_T.jpg</td>
+                        <td>Real</td>
+                        <td>1.88</td>
+                        <td>1.80</td>
+                        <td><strong>0.08</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>6</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">115084_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>20.26</td>
+                        <td>2.66</td>
+                        <td><strong>17.60</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>7</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116356_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>53.09</td>
+                        <td>37.60</td>
+                        <td><strong>15.49</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>8</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116358_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>74.00</td>
+                        <td>66.22</td>
+                        <td><strong>7.78</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>9</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116359_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>42.38</td>
+                        <td>23.18</td>
+                        <td><strong>19.20</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>10</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116360_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>48.02</td>
+                        <td>61.98</td>
+                        <td><strong>13.96</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>11</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116361_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>12.38</td>
+                        <td>16.40</td>
+                        <td><strong>4.02</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>12</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116362_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>30.29</td>
+                        <td>40.25</td>
+                        <td><strong>9.96</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>13</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116363_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>42.29</td>
+                        <td>23.11</td>
+                        <td><strong>19.18</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>14</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116364_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>70.22</td>
+                        <td>93.41</td>
+                        <td><strong>23.19</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>15</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116365_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>91.83</td>
+                        <td>89.17</td>
+                        <td><strong>2.66</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>16</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116366_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>25.09</td>
+                        <td>0.12</td>
+                        <td><strong>24.97</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>17</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116368_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>41.98</td>
+                        <td>55.96</td>
+                        <td><strong>13.98</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>18</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116369_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>62.02</td>
+                        <td>82.57</td>
+                        <td><strong>20.55</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>19</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116370_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>27.75</td>
+                        <td>6.25</td>
+                        <td><strong>21.50</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>20</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116371_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>7.21</td>
+                        <td>9.60</td>
+                        <td><strong>2.39</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>21</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116372_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>46.17</td>
+                        <td>28.24</td>
+                        <td><strong>17.93</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>22</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116373_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>72.97</td>
+                        <td>63.96</td>
+                        <td><strong>9.01</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>23</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116374_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>63.99</td>
+                        <td>52.00</td>
+                        <td><strong>11.99</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>24</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116375_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>9.25</td>
+                        <td>12.21</td>
+                        <td><strong>2.96</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>25</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116388_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>37.45</td>
+                        <td>16.68</td>
+                        <td><strong>20.77</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>26</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116389_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>51.73</td>
+                        <td>61.12</td>
+                        <td><strong>9.39</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>27</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116390_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>15.80</td>
+                        <td>4.36</td>
+                        <td><strong>11.44</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>28</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116391_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>88.57</td>
+                        <td>85.01</td>
+                        <td><strong>3.56</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>29</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116392_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>29.08</td>
+                        <td>5.52</td>
+                        <td><strong>23.56</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>30</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116393_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>42.03</td>
+                        <td>25.95</td>
+                        <td><strong>16.08</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>31</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116394_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>69.14</td>
+                        <td>66.08</td>
+                        <td><strong>3.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>32</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116404_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>29.65</td>
+                        <td>39.53</td>
+                        <td><strong>9.88</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>33</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116405_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>37.25</td>
+                        <td>19.48</td>
+                        <td><strong>17.77</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>34</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116406_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>25.54</td>
+                        <td>34.02</td>
+                        <td><strong>8.48</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>35</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116407_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>29.98</td>
+                        <td>10.67</td>
+                        <td><strong>19.31</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>36</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116408_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>52.84</td>
+                        <td>54.46</td>
+                        <td><strong>1.62</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>37</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116409_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>25.41</td>
+                        <td>0.57</td>
+                        <td><strong>24.84</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>38</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116410_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>49.06</td>
+                        <td>32.18</td>
+                        <td><strong>16.88</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>39</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116412_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>30.50</td>
+                        <td>7.36</td>
+                        <td><strong>23.14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>40</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116413_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>29.85</td>
+                        <td>15.73</td>
+                        <td><strong>14.12</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>41</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116414_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>46.50</td>
+                        <td>61.84</td>
+                        <td><strong>15.34</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>42</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116415_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>25.03</td>
+                        <td>0.08</td>
+                        <td><strong>24.95</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>43</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">116416_0_T.jpg</td>
+                        <td>Real</td>
+                        <td>0.05</td>
+                        <td>0.07</td>
+                        <td><strong>0.02</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>44</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">117714_T.jpg</td>
+                        <td>Real</td>
+                        <td>60.36</td>
+                        <td>80.34</td>
+                        <td><strong>19.98</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>45</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">117716_T.jpg</td>
+                        <td>Real</td>
+                        <td>91.09</td>
+                        <td>88.65</td>
+                        <td><strong>2.44</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>46</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5663.jpg</td>
+                        <td>AI</td>
+                        <td>99.51</td>
+                        <td>99.93</td>
+                        <td><strong>0.42</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>47</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5664.jpg</td>
+                        <td>AI</td>
+                        <td>74.13</td>
+                        <td>65.58</td>
+                        <td><strong>8.55</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>48</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5665.jpg</td>
+                        <td>AI</td>
+                        <td>97.75</td>
+                        <td>97.00</td>
+                        <td><strong>0.75</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>49</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5666.jpg</td>
+                        <td>AI</td>
+                        <td>98.70</td>
+                        <td>98.27</td>
+                        <td><strong>0.43</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>50</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5667.jpg</td>
+                        <td>AI</td>
+                        <td>99.84</td>
+                        <td>99.78</td>
+                        <td><strong>0.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>51</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5668.jpg</td>
+                        <td>AI</td>
+                        <td>100.00</td>
+                        <td>100.00</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>52</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5705.jpg</td>
+                        <td>AI</td>
+                        <td>99.46</td>
+                        <td>99.28</td>
+                        <td><strong>0.18</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>53</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5706.jpg</td>
+                        <td>AI</td>
+                        <td>99.24</td>
+                        <td>98.99</td>
+                        <td><strong>0.25</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>54</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5707.jpg</td>
+                        <td>AI</td>
+                        <td>99.82</td>
+                        <td>99.75</td>
+                        <td><strong>0.07</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>55</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5708.jpg</td>
+                        <td>AI</td>
+                        <td>96.18</td>
+                        <td>94.91</td>
+                        <td><strong>1.27</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>56</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5723.jpg</td>
+                        <td>AI</td>
+                        <td>68.47</td>
+                        <td>57.96</td>
+                        <td><strong>10.51</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>57</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5724.jpg</td>
+                        <td>AI</td>
+                        <td>86.99</td>
+                        <td>82.66</td>
+                        <td><strong>4.33</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>58</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5725.jpg</td>
+                        <td>AI</td>
+                        <td>99.77</td>
+                        <td>99.70</td>
+                        <td><strong>0.07</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>59</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5726.jpg</td>
+                        <td>AI</td>
+                        <td>99.86</td>
+                        <td>99.81</td>
+                        <td><strong>0.05</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>60</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5727.jpg</td>
+                        <td>AI</td>
+                        <td>81.81</td>
+                        <td>75.75</td>
+                        <td><strong>6.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>61</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5728.jpg</td>
+                        <td>AI</td>
+                        <td>95.77</td>
+                        <td>95.19</td>
+                        <td><strong>0.58</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>62</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5729.jpg</td>
+                        <td>AI</td>
+                        <td>99.84</td>
+                        <td>99.79</td>
+                        <td><strong>0.05</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>63</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5730.jpg</td>
+                        <td>AI</td>
+                        <td>99.65</td>
+                        <td>99.54</td>
+                        <td><strong>0.11</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>64</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5731.jpg</td>
+                        <td>AI</td>
+                        <td>99.82</td>
+                        <td>99.76</td>
+                        <td><strong>0.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>65</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5732.jpg</td>
+                        <td>AI</td>
+                        <td>99.44</td>
+                        <td>99.25</td>
+                        <td><strong>0.19</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>66</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5733.jpg</td>
+                        <td>AI</td>
+                        <td>98.01</td>
+                        <td>97.39</td>
+                        <td><strong>0.62</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>67</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5734.jpg</td>
+                        <td>AI</td>
+                        <td>98.18</td>
+                        <td>97.58</td>
+                        <td><strong>0.60</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>68</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5735.jpg</td>
+                        <td>AI</td>
+                        <td>99.74</td>
+                        <td>99.65</td>
+                        <td><strong>0.09</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>69</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5736.jpg</td>
+                        <td>AI</td>
+                        <td>99.48</td>
+                        <td>99.31</td>
+                        <td><strong>0.17</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>70</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5737.jpg</td>
+                        <td>AI</td>
+                        <td>98.30</td>
+                        <td>97.74</td>
+                        <td><strong>0.56</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>71</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5738.jpg</td>
+                        <td>AI</td>
+                        <td>88.51</td>
+                        <td>84.68</td>
+                        <td><strong>3.83</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>72</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5739.jpg</td>
+                        <td>AI</td>
+                        <td>69.06</td>
+                        <td>58.89</td>
+                        <td><strong>10.17</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>73</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5740.jpg</td>
+                        <td>AI</td>
+                        <td>66.82</td>
+                        <td>55.77</td>
+                        <td><strong>11.05</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>74</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5741.jpg</td>
+                        <td>AI</td>
+                        <td>99.52</td>
+                        <td>99.36</td>
+                        <td><strong>0.16</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>75</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5742.jpg</td>
+                        <td>AI</td>
+                        <td>75.92</td>
+                        <td>67.91</td>
+                        <td><strong>8.01</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>76</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5743.jpg</td>
+                        <td>AI</td>
+                        <td>99.99</td>
+                        <td>99.98</td>
+                        <td><strong>0.01</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>77</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5744.jpg</td>
+                        <td>AI</td>
+                        <td>97.03</td>
+                        <td>96.04</td>
+                        <td><strong>0.99</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>78</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5745.jpg</td>
+                        <td>AI</td>
+                        <td>99.72</td>
+                        <td>99.63</td>
+                        <td><strong>0.09</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>79</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5746.jpg</td>
+                        <td>AI</td>
+                        <td>99.96</td>
+                        <td>99.95</td>
+                        <td><strong>0.01</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>80</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5747.jpg</td>
+                        <td>AI</td>
+                        <td>27.53</td>
+                        <td>3.37</td>
+                        <td><strong>24.16</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>81</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5748.jpg</td>
+                        <td>AI</td>
+                        <td>99.97</td>
+                        <td>99.97</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>82</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5749.jpg</td>
+                        <td>AI</td>
+                        <td>99.19</td>
+                        <td>98.92</td>
+                        <td><strong>0.27</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>83</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5750.jpg</td>
+                        <td>AI</td>
+                        <td>99.54</td>
+                        <td>99.39</td>
+                        <td><strong>0.15</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>84</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5751.jpg</td>
+                        <td>AI</td>
+                        <td>79.57</td>
+                        <td>83.45</td>
+                        <td><strong>3.88</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>85</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5752.jpg</td>
+                        <td>AI</td>
+                        <td>77.48</td>
+                        <td>70.01</td>
+                        <td><strong>7.47</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>86</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5753.jpg</td>
+                        <td>AI</td>
+                        <td>99.76</td>
+                        <td>99.69</td>
+                        <td><strong>0.07</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>87</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5754.jpg</td>
+                        <td>AI</td>
+                        <td>91.70</td>
+                        <td>88.96</td>
+                        <td><strong>2.74</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>88</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5755.jpg</td>
+                        <td>AI</td>
+                        <td>99.90</td>
+                        <td>99.87</td>
+                        <td><strong>0.03</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>89</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5981.jpg</td>
+                        <td>AI</td>
+                        <td>99.97</td>
+                        <td>99.97</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>90</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5982.jpg</td>
+                        <td>AI</td>
+                        <td>99.31</td>
+                        <td>99.34</td>
+                        <td><strong>0.03</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>91</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5996.jpg</td>
+                        <td>AI</td>
+                        <td>99.52</td>
+                        <td>99.37</td>
+                        <td><strong>0.15</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>92</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5997.jpg</td>
+                        <td>AI</td>
+                        <td>99.50</td>
+                        <td>99.34</td>
+                        <td><strong>0.16</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>93</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5998.jpg</td>
+                        <td>AI</td>
+                        <td>99.51</td>
+                        <td>99.34</td>
+                        <td><strong>0.17</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>94</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">5999.jpg</td>
+                        <td>AI</td>
+                        <td>95.16</td>
+                        <td>93.54</td>
+                        <td><strong>1.62</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>95</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">6000.jpg</td>
+                        <td>AI</td>
+                        <td>99.89</td>
+                        <td>99.85</td>
+                        <td><strong>0.04</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>96</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">Add_a_subheading.png</td>
+                        <td>AI</td>
+                        <td>99.47</td>
+                        <td>99.80</td>
+                        <td><strong>0.33</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>97</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ChatGPT Image 9 ก.พ. 2569 08_22_25.png</td>
+                        <td>AI</td>
+                        <td>99.73</td>
+                        <td>99.93</td>
+                        <td><strong>0.20</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>98</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ChatGPT_Image_Sep_10_2025_07_50_46_PM.png</td>
+                        <td>AI</td>
+                        <td>99.97</td>
+                        <td>100.00</td>
+                        <td><strong>0.03</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>99</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">Generated_Image_September_10_2025_-_7_45PM_3.png</td>
+                        <td>AI</td>
+                        <td>100.00</td>
+                        <td>100.00</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>100</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">Khaochangphuak_06 (1)_T.jpg</td>
+                        <td>Real</td>
+                        <td>9.99</td>
+                        <td>13.03</td>
+                        <td><strong>3.04</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>101</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">pagoda-1370346_1280_T.jpg</td>
+                        <td>Real</td>
+                        <td>60.64</td>
+                        <td>47.70</td>
+                        <td><strong>12.94</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>102</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">temple-6567223_1280_T.jpg</td>
+                        <td>Real</td>
+                        <td>32.55</td>
+                        <td>23.34</td>
+                        <td><strong>9.21</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>103</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">train-4362166_1280_T.jpg</td>
+                        <td>Real</td>
+                        <td>15.24</td>
+                        <td>8.68</td>
+                        <td><strong>6.56</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>104</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (1).jpg</td>
+                        <td>Real</td>
+                        <td>31.06</td>
+                        <td>35.42</td>
+                        <td><strong>4.36</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>105</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (1).png</td>
+                        <td>Real</td>
+                        <td>96.30</td>
+                        <td>95.08</td>
+                        <td><strong>1.22</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>106</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (10).jpg</td>
+                        <td>Real</td>
+                        <td>58.15</td>
+                        <td>72.11</td>
+                        <td><strong>13.96</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>107</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (11).jpg</td>
+                        <td>Real</td>
+                        <td>74.99</td>
+                        <td>99.47</td>
+                        <td><strong>24.48</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>108</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (12).jpg</td>
+                        <td>Real</td>
+                        <td>79.52</td>
+                        <td>96.59</td>
+                        <td><strong>17.07</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>109</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (13).jpg</td>
+                        <td>Real</td>
+                        <td>73.50</td>
+                        <td>92.05</td>
+                        <td><strong>18.55</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>110</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (14).jpg</td>
+                        <td>Real</td>
+                        <td>82.96</td>
+                        <td>80.59</td>
+                        <td><strong>2.37</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>111</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (15).jpg</td>
+                        <td>Real</td>
+                        <td>29.30</td>
+                        <td>23.50</td>
+                        <td><strong>5.80</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>112</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (16).jpg</td>
+                        <td>Real</td>
+                        <td>60.42</td>
+                        <td>80.34</td>
+                        <td><strong>19.92</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>113</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (17).jpg</td>
+                        <td>Real</td>
+                        <td>92.68</td>
+                        <td>90.25</td>
+                        <td><strong>2.43</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>114</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (18).jpg</td>
+                        <td>Real</td>
+                        <td>67.69</td>
+                        <td>66.69</td>
+                        <td><strong>1.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>115</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (19).jpg</td>
+                        <td>Real</td>
+                        <td>61.59</td>
+                        <td>49.32</td>
+                        <td><strong>12.27</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>116</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (2).jpg</td>
+                        <td>Real</td>
+                        <td>48.50</td>
+                        <td>62.89</td>
+                        <td><strong>14.39</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>117</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (2).png</td>
+                        <td>Real</td>
+                        <td>98.18</td>
+                        <td>97.58</td>
+                        <td><strong>0.60</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>118</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (20).jpg</td>
+                        <td>Real</td>
+                        <td>25.88</td>
+                        <td>34.50</td>
+                        <td><strong>8.62</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>119</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (21).jpg</td>
+                        <td>Real</td>
+                        <td>73.61</td>
+                        <td>80.01</td>
+                        <td><strong>6.40</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>120</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (22).jpg</td>
+                        <td>Real</td>
+                        <td>50.00</td>
+                        <td>65.91</td>
+                        <td><strong>15.91</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>121</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (23).jpg</td>
+                        <td>Real</td>
+                        <td>79.65</td>
+                        <td>73.08</td>
+                        <td><strong>6.57</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>122</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (24).jpg</td>
+                        <td>Real</td>
+                        <td>75.71</td>
+                        <td>67.68</td>
+                        <td><strong>8.03</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>123</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (25).jpg</td>
+                        <td>Real</td>
+                        <td>68.70</td>
+                        <td>87.49</td>
+                        <td><strong>18.79</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>124</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (26).jpg</td>
+                        <td>Real</td>
+                        <td>93.77</td>
+                        <td>91.80</td>
+                        <td><strong>1.97</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>125</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (27).jpg</td>
+                        <td>Real</td>
+                        <td>84.83</td>
+                        <td>81.16</td>
+                        <td><strong>3.67</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>126</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (28).jpg</td>
+                        <td>Real</td>
+                        <td>78.75</td>
+                        <td>71.67</td>
+                        <td><strong>7.08</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>127</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (29).jpg</td>
+                        <td>Real</td>
+                        <td>74.34</td>
+                        <td>98.66</td>
+                        <td><strong>24.32</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>128</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (3).jpg</td>
+                        <td>Real</td>
+                        <td>58.60</td>
+                        <td>65.00</td>
+                        <td><strong>6.40</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>129</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (3).png</td>
+                        <td>Real</td>
+                        <td>86.65</td>
+                        <td>82.23</td>
+                        <td><strong>4.42</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>130</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (30).jpg</td>
+                        <td>Real</td>
+                        <td>13.23</td>
+                        <td>17.37</td>
+                        <td><strong>4.14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>131</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (31).jpg</td>
+                        <td>Real</td>
+                        <td>68.01</td>
+                        <td>89.94</td>
+                        <td><strong>21.93</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>132</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (32).jpg</td>
+                        <td>Real</td>
+                        <td>37.78</td>
+                        <td>17.44</td>
+                        <td><strong>20.34</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>133</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (33).jpg</td>
+                        <td>Real</td>
+                        <td>43.33</td>
+                        <td>32.32</td>
+                        <td><strong>11.01</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>134</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (34).jpg</td>
+                        <td>Real</td>
+                        <td>79.69</td>
+                        <td>92.71</td>
+                        <td><strong>13.02</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>135</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (35).jpg</td>
+                        <td>Real</td>
+                        <td>26.97</td>
+                        <td>3.67</td>
+                        <td><strong>23.30</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>136</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (36).jpg</td>
+                        <td>Real</td>
+                        <td>76.51</td>
+                        <td>69.07</td>
+                        <td><strong>7.44</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>137</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (37).jpg</td>
+                        <td>Real</td>
+                        <td>86.11</td>
+                        <td>86.03</td>
+                        <td><strong>0.08</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>138</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (38).jpg</td>
+                        <td>Real</td>
+                        <td>90.91</td>
+                        <td>88.36</td>
+                        <td><strong>2.55</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>139</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (39).jpg</td>
+                        <td>Real</td>
+                        <td>87.80</td>
+                        <td>83.74</td>
+                        <td><strong>4.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>140</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (4).jpg</td>
+                        <td>Real</td>
+                        <td>43.71</td>
+                        <td>58.28</td>
+                        <td><strong>14.57</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>141</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (4).png</td>
+                        <td>Real</td>
+                        <td>96.23</td>
+                        <td>94.97</td>
+                        <td><strong>1.26</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>142</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (40).jpg</td>
+                        <td>Real</td>
+                        <td>87.44</td>
+                        <td>85.05</td>
+                        <td><strong>2.39</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>143</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (41).jpg</td>
+                        <td>Real</td>
+                        <td>35.67</td>
+                        <td>47.51</td>
+                        <td><strong>11.84</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>144</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (42).jpg</td>
+                        <td>Real</td>
+                        <td>27.23</td>
+                        <td>36.29</td>
+                        <td><strong>9.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>145</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (43).jpg</td>
+                        <td>Real</td>
+                        <td>59.25</td>
+                        <td>79.00</td>
+                        <td><strong>19.75</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>146</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (44).jpg</td>
+                        <td>Real</td>
+                        <td>53.70</td>
+                        <td>70.54</td>
+                        <td><strong>16.84</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>147</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (45).jpg</td>
+                        <td>Real</td>
+                        <td>44.94</td>
+                        <td>59.75</td>
+                        <td><strong>14.81</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>148</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (46).jpg</td>
+                        <td>Real</td>
+                        <td>72.36</td>
+                        <td>94.41</td>
+                        <td><strong>22.05</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>149</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (47).jpg</td>
+                        <td>Real</td>
+                        <td>82.30</td>
+                        <td>96.30</td>
+                        <td><strong>14.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>150</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (48).jpg</td>
+                        <td>Real</td>
+                        <td>37.57</td>
+                        <td>50.05</td>
+                        <td><strong>12.48</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>151</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (49).jpg</td>
+                        <td>Real</td>
+                        <td>2.37</td>
+                        <td>3.15</td>
+                        <td><strong>0.78</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>152</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (5).jpg</td>
+                        <td>Real</td>
+                        <td>94.62</td>
+                        <td>97.05</td>
+                        <td><strong>2.43</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>153</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (5).png</td>
+                        <td>Real</td>
+                        <td>99.23</td>
+                        <td>98.97</td>
+                        <td><strong>0.26</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>154</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (50).jpg</td>
+                        <td>Real</td>
+                        <td>33.74</td>
+                        <td>44.98</td>
+                        <td><strong>11.24</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>155</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (51).jpg</td>
+                        <td>Real</td>
+                        <td>59.94</td>
+                        <td>79.91</td>
+                        <td><strong>19.97</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>156</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (52).jpg</td>
+                        <td>Real</td>
+                        <td>49.67</td>
+                        <td>66.23</td>
+                        <td><strong>16.56</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>157</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (53).jpg</td>
+                        <td>Real</td>
+                        <td>5.54</td>
+                        <td>7.38</td>
+                        <td><strong>1.84</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>158</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (54).jpg</td>
+                        <td>Real</td>
+                        <td>55.58</td>
+                        <td>74.11</td>
+                        <td><strong>18.53</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>159</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (55).jpg</td>
+                        <td>Real</td>
+                        <td>7.15</td>
+                        <td>9.53</td>
+                        <td><strong>2.38</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>160</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (56).jpg</td>
+                        <td>Real</td>
+                        <td>72.24</td>
+                        <td>96.24</td>
+                        <td><strong>24.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>161</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (57).jpg</td>
+                        <td>Real</td>
+                        <td>2.86</td>
+                        <td>3.74</td>
+                        <td><strong>0.88</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>162</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (58).jpg</td>
+                        <td>Real</td>
+                        <td>36.63</td>
+                        <td>48.83</td>
+                        <td><strong>12.20</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>163</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (59).jpg</td>
+                        <td>Real</td>
+                        <td>28.98</td>
+                        <td>38.64</td>
+                        <td><strong>9.66</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>164</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (6).jpg</td>
+                        <td>Real</td>
+                        <td>97.54</td>
+                        <td>96.89</td>
+                        <td><strong>0.65</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>165</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (6).png</td>
+                        <td>Real</td>
+                        <td>98.89</td>
+                        <td>98.52</td>
+                        <td><strong>0.37</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>166</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (60).jpg</td>
+                        <td>Real</td>
+                        <td>38.22</td>
+                        <td>50.94</td>
+                        <td><strong>12.72</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>167</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (61).jpg</td>
+                        <td>Real</td>
+                        <td>65.23</td>
+                        <td>86.97</td>
+                        <td><strong>21.74</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>168</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (62).jpg</td>
+                        <td>Real</td>
+                        <td>72.64</td>
+                        <td>96.85</td>
+                        <td><strong>24.21</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>169</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (63).jpg</td>
+                        <td>Real</td>
+                        <td>46.80</td>
+                        <td>62.40</td>
+                        <td><strong>15.60</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>170</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (64).jpg</td>
+                        <td>Real</td>
+                        <td>61.23</td>
+                        <td>81.62</td>
+                        <td><strong>20.39</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>171</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (65).jpg</td>
+                        <td>Real</td>
+                        <td>50.84</td>
+                        <td>67.79</td>
+                        <td><strong>16.95</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>172</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (66).jpg</td>
+                        <td>Real</td>
+                        <td>32.15</td>
+                        <td>32.26</td>
+                        <td><strong>0.11</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>173</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (67).jpg</td>
+                        <td>Real</td>
+                        <td>45.65</td>
+                        <td>60.35</td>
+                        <td><strong>14.70</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>174</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (68).jpg</td>
+                        <td>Real</td>
+                        <td>23.86</td>
+                        <td>31.81</td>
+                        <td><strong>7.95</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>175</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (69).jpg</td>
+                        <td>Real</td>
+                        <td>41.35</td>
+                        <td>55.10</td>
+                        <td><strong>13.75</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>176</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (7).jpg</td>
+                        <td>Real</td>
+                        <td>91.63</td>
+                        <td>95.41</td>
+                        <td><strong>3.78</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>177</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (7).png</td>
+                        <td>Real</td>
+                        <td>97.27</td>
+                        <td>96.36</td>
+                        <td><strong>0.91</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>178</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (70).jpg</td>
+                        <td>Real</td>
+                        <td>91.80</td>
+                        <td>91.15</td>
+                        <td><strong>0.65</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>179</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (71).jpg</td>
+                        <td>Real</td>
+                        <td>68.51</td>
+                        <td>91.34</td>
+                        <td><strong>22.83</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>180</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (72).jpg</td>
+                        <td>Real</td>
+                        <td>63.33</td>
+                        <td>84.44</td>
+                        <td><strong>21.11</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>181</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (73).jpg</td>
+                        <td>Real</td>
+                        <td>36.30</td>
+                        <td>48.40</td>
+                        <td><strong>12.10</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>182</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (74).jpg</td>
+                        <td>Real</td>
+                        <td>29.06</td>
+                        <td>38.75</td>
+                        <td><strong>9.69</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>183</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (75).jpg</td>
+                        <td>Real</td>
+                        <td>68.65</td>
+                        <td>90.89</td>
+                        <td><strong>22.24</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>184</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (76).jpg</td>
+                        <td>Real</td>
+                        <td>65.38</td>
+                        <td>87.17</td>
+                        <td><strong>21.79</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>185</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (77).jpg</td>
+                        <td>Real</td>
+                        <td>52.73</td>
+                        <td>70.25</td>
+                        <td><strong>17.52</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>186</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (78).jpg</td>
+                        <td>Real</td>
+                        <td>69.76</td>
+                        <td>91.77</td>
+                        <td><strong>22.01</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>187</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (79).jpg</td>
+                        <td>Real</td>
+                        <td>29.68</td>
+                        <td>39.57</td>
+                        <td><strong>9.89</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>188</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (8).jpg</td>
+                        <td>Real</td>
+                        <td>76.46</td>
+                        <td>99.34</td>
+                        <td><strong>22.88</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>189</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (8).png</td>
+                        <td>Real</td>
+                        <td>86.83</td>
+                        <td>82.44</td>
+                        <td><strong>4.39</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>190</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (80).jpg</td>
+                        <td>Real</td>
+                        <td>51.70</td>
+                        <td>68.66</td>
+                        <td><strong>16.96</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>191</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (81).jpg</td>
+                        <td>Real</td>
+                        <td>62.01</td>
+                        <td>68.03</td>
+                        <td><strong>6.02</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>192</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (82).jpg</td>
+                        <td>Real</td>
+                        <td>61.89</td>
+                        <td>54.55</td>
+                        <td><strong>7.34</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>193</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (83).jpg</td>
+                        <td>Real</td>
+                        <td>47.16</td>
+                        <td>52.11</td>
+                        <td><strong>4.95</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>194</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (84).jpg</td>
+                        <td>Real</td>
+                        <td>54.75</td>
+                        <td>39.68</td>
+                        <td><strong>15.07</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>195</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (85).jpg</td>
+                        <td>Real</td>
+                        <td>54.13</td>
+                        <td>71.37</td>
+                        <td><strong>17.24</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>196</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (86).jpg</td>
+                        <td>Real</td>
+                        <td>73.10</td>
+                        <td>91.10</td>
+                        <td><strong>18.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>197</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (87).jpg</td>
+                        <td>Real</td>
+                        <td>28.70</td>
+                        <td>35.78</td>
+                        <td><strong>7.08</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>198</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (88).jpg</td>
+                        <td>Real</td>
+                        <td>99.22</td>
+                        <td>98.99</td>
+                        <td><strong>0.23</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>199</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (89).jpg</td>
+                        <td>Real</td>
+                        <td>24.91</td>
+                        <td>33.21</td>
+                        <td><strong>8.30</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>200</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (9).jpg</td>
+                        <td>Real</td>
+                        <td>88.34</td>
+                        <td>97.68</td>
+                        <td><strong>9.34</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>201</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (9).png</td>
+                        <td>Real</td>
+                        <td>78.80</td>
+                        <td>71.73</td>
+                        <td><strong>7.07</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>202</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (90).jpg</td>
+                        <td>Real</td>
+                        <td>58.95</td>
+                        <td>74.82</td>
+                        <td><strong>15.87</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>203</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">TT (91).jpg</td>
+                        <td>Real</td>
+                        <td>83.10</td>
+                        <td>77.47</td>
+                        <td><strong>5.63</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>204</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">unnamed.jpg</td>
+                        <td>AI</td>
+                        <td>65.54</td>
+                        <td>54.14</td>
+                        <td><strong>11.40</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>205</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">waterfall-9865189_1280_T.jpg</td>
+                        <td>Real</td>
+                        <td>1.22</td>
+                        <td>1.54</td>
+                        <td><strong>0.32</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>206</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">y65n37.png</td>
+                        <td>AI</td>
+                        <td>96.89</td>
+                        <td>99.98</td>
+                        <td><strong>3.09</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>207</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yarm2z.png</td>
+                        <td>AI</td>
+                        <td>89.02</td>
+                        <td>86.57</td>
+                        <td><strong>2.45</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>208</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yaxjuu.jpg</td>
+                        <td>AI</td>
+                        <td>99.09</td>
+                        <td>98.88</td>
+                        <td><strong>0.21</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>209</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yazi2t.png</td>
+                        <td>AI</td>
+                        <td>85.74</td>
+                        <td>88.48</td>
+                        <td><strong>2.74</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>210</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ybsq37.png</td>
+                        <td>AI</td>
+                        <td>94.87</td>
+                        <td>94.75</td>
+                        <td><strong>0.12</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>211</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ybswfm.png</td>
+                        <td>AI</td>
+                        <td>98.27</td>
+                        <td>99.70</td>
+                        <td><strong>1.43</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>212</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ybwu2w.png</td>
+                        <td>AI</td>
+                        <td>99.91</td>
+                        <td>99.95</td>
+                        <td><strong>0.04</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>213</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ycld75.png</td>
+                        <td>AI</td>
+                        <td>99.82</td>
+                        <td>99.85</td>
+                        <td><strong>0.03</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>214</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yclf4h.png</td>
+                        <td>AI</td>
+                        <td>99.54</td>
+                        <td>99.65</td>
+                        <td><strong>0.11</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>215</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ydcx95.jpg</td>
+                        <td>AI</td>
+                        <td>66.19</td>
+                        <td>71.67</td>
+                        <td><strong>5.48</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>216</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ydfo53.png</td>
+                        <td>AI</td>
+                        <td>99.87</td>
+                        <td>99.82</td>
+                        <td><strong>0.05</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>217</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yelnzb.jpg</td>
+                        <td>AI</td>
+                        <td>98.30</td>
+                        <td>99.93</td>
+                        <td><strong>1.63</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>218</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yenffy.jpg</td>
+                        <td>AI</td>
+                        <td>83.62</td>
+                        <td>79.13</td>
+                        <td><strong>4.49</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>219</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yev8d2.jpg</td>
+                        <td>AI</td>
+                        <td>77.84</td>
+                        <td>99.20</td>
+                        <td><strong>21.36</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>220</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yf2b76.png</td>
+                        <td>AI</td>
+                        <td>90.62</td>
+                        <td>100.00</td>
+                        <td><strong>9.38</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>221</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yf3120.png</td>
+                        <td>AI</td>
+                        <td>99.48</td>
+                        <td>99.74</td>
+                        <td><strong>0.26</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>222</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yfni3j.png</td>
+                        <td>AI</td>
+                        <td>96.42</td>
+                        <td>99.94</td>
+                        <td><strong>3.52</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>223</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yfxlzf.png</td>
+                        <td>AI</td>
+                        <td>94.52</td>
+                        <td>99.96</td>
+                        <td><strong>5.44</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>224</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yfzl0s.png</td>
+                        <td>AI</td>
+                        <td>99.96</td>
+                        <td>99.99</td>
+                        <td><strong>0.03</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>225</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yg6i6g.jpg</td>
+                        <td>AI</td>
+                        <td>98.50</td>
+                        <td>99.91</td>
+                        <td><strong>1.41</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>226</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ygu54w.png</td>
+                        <td>AI</td>
+                        <td>99.38</td>
+                        <td>99.98</td>
+                        <td><strong>0.60</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>227</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yh0tlg.jpg</td>
+                        <td>AI</td>
+                        <td>85.35</td>
+                        <td>99.82</td>
+                        <td><strong>14.47</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>228</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yh4ehl.jpg</td>
+                        <td>AI</td>
+                        <td>76.78</td>
+                        <td>98.72</td>
+                        <td><strong>21.94</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>229</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yh7s6d.png</td>
+                        <td>AI</td>
+                        <td>76.94</td>
+                        <td>99.97</td>
+                        <td><strong>23.03</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>230</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yh7vk4.jpg</td>
+                        <td>AI</td>
+                        <td>95.49</td>
+                        <td>98.37</td>
+                        <td><strong>2.88</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>231</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yhs4c8.png</td>
+                        <td>AI</td>
+                        <td>99.98</td>
+                        <td>99.97</td>
+                        <td><strong>0.01</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>232</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yhv313.jpg</td>
+                        <td>AI</td>
+                        <td>81.10</td>
+                        <td>99.40</td>
+                        <td><strong>18.30</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>233</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yi62rg.png</td>
+                        <td>AI</td>
+                        <td>81.17</td>
+                        <td>79.72</td>
+                        <td><strong>1.45</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>234</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yia1xm.jpg</td>
+                        <td>AI</td>
+                        <td>67.78</td>
+                        <td>59.76</td>
+                        <td><strong>8.02</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>235</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yiq82f.png</td>
+                        <td>AI</td>
+                        <td>99.99</td>
+                        <td>100.00</td>
+                        <td><strong>0.01</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>236</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yjkiqu.jpg</td>
+                        <td>AI</td>
+                        <td>99.16</td>
+                        <td>100.00</td>
+                        <td><strong>0.84</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>237</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yjxryz.png</td>
+                        <td>AI</td>
+                        <td>99.98</td>
+                        <td>99.98</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>238</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yl1ffi.png</td>
+                        <td>AI</td>
+                        <td>78.58</td>
+                        <td>99.55</td>
+                        <td><strong>20.97</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>239</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yl1p74.jpg</td>
+                        <td>AI</td>
+                        <td>97.25</td>
+                        <td>99.31</td>
+                        <td><strong>2.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>240</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ylhedu.png</td>
+                        <td>AI</td>
+                        <td>99.80</td>
+                        <td>99.98</td>
+                        <td><strong>0.18</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>241</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ylubno.jpg</td>
+                        <td>AI</td>
+                        <td>99.81</td>
+                        <td>99.94</td>
+                        <td><strong>0.13</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>242</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ylvvhe.jpg</td>
+                        <td>AI</td>
+                        <td>100.00</td>
+                        <td>100.00</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>243</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ym5nez.png</td>
+                        <td>AI</td>
+                        <td>74.32</td>
+                        <td>89.40</td>
+                        <td><strong>15.08</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>244</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ymalhf.png</td>
+                        <td>AI</td>
+                        <td>99.65</td>
+                        <td>99.94</td>
+                        <td><strong>0.29</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>245</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ymvb6s.jpg</td>
+                        <td>AI</td>
+                        <td>75.45</td>
+                        <td>99.78</td>
+                        <td><strong>24.33</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>246</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yn6rof.png</td>
+                        <td>AI</td>
+                        <td>99.89</td>
+                        <td>100.00</td>
+                        <td><strong>0.11</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>247</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ynmpfm.png</td>
+                        <td>AI</td>
+                        <td>99.39</td>
+                        <td>99.78</td>
+                        <td><strong>0.39</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>248</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yo2r38.jpg</td>
+                        <td>AI</td>
+                        <td>98.37</td>
+                        <td>99.85</td>
+                        <td><strong>1.48</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>249</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yonx6b.png</td>
+                        <td>AI</td>
+                        <td>92.73</td>
+                        <td>99.95</td>
+                        <td><strong>7.22</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>250</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yoofoi.png</td>
+                        <td>AI</td>
+                        <td>95.27</td>
+                        <td>95.22</td>
+                        <td><strong>0.05</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>251</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yos4cy.png</td>
+                        <td>AI</td>
+                        <td>99.47</td>
+                        <td>99.98</td>
+                        <td><strong>0.51</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>252</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yosqkk.jpg</td>
+                        <td>AI</td>
+                        <td>99.15</td>
+                        <td>98.89</td>
+                        <td><strong>0.26</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>253</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yotxg7.jpg</td>
+                        <td>AI</td>
+                        <td>79.03</td>
+                        <td>72.28</td>
+                        <td><strong>6.75</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>254</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yozyl9.png</td>
+                        <td>AI</td>
+                        <td>96.26</td>
+                        <td>99.75</td>
+                        <td><strong>3.49</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>255</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yp1nxg.jpg</td>
+                        <td>AI</td>
+                        <td>99.59</td>
+                        <td>99.47</td>
+                        <td><strong>0.12</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>256</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yp1s16.png</td>
+                        <td>AI</td>
+                        <td>99.74</td>
+                        <td>99.97</td>
+                        <td><strong>0.23</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>257</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yp5cmd.png</td>
+                        <td>AI</td>
+                        <td>71.34</td>
+                        <td>64.57</td>
+                        <td><strong>6.77</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>258</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yp60lp.jpg</td>
+                        <td>AI</td>
+                        <td>99.87</td>
+                        <td>99.94</td>
+                        <td><strong>0.07</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>259</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yp61l3.jpg</td>
+                        <td>AI</td>
+                        <td>33.82</td>
+                        <td>11.76</td>
+                        <td><strong>22.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>260</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yp96ph.png</td>
+                        <td>AI</td>
+                        <td>75.00</td>
+                        <td>99.81</td>
+                        <td><strong>24.81</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>261</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypb8u2.jpg</td>
+                        <td>AI</td>
+                        <td>74.93</td>
+                        <td>98.83</td>
+                        <td><strong>23.90</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>262</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypc543.jpg</td>
+                        <td>AI</td>
+                        <td>76.83</td>
+                        <td>99.96</td>
+                        <td><strong>23.13</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>263</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypcwic.png</td>
+                        <td>AI</td>
+                        <td>96.62</td>
+                        <td>99.56</td>
+                        <td><strong>2.94</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>264</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypde0q.png</td>
+                        <td>AI</td>
+                        <td>99.50</td>
+                        <td>99.40</td>
+                        <td><strong>0.10</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>265</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypdr1l.png</td>
+                        <td>AI</td>
+                        <td>94.89</td>
+                        <td>98.98</td>
+                        <td><strong>4.09</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>266</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ype507.png</td>
+                        <td>AI</td>
+                        <td>99.22</td>
+                        <td>99.79</td>
+                        <td><strong>0.57</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>267</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypehr4.png</td>
+                        <td>AI</td>
+                        <td>99.92</td>
+                        <td>99.90</td>
+                        <td><strong>0.02</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>268</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypftxz.png</td>
+                        <td>AI</td>
+                        <td>99.96</td>
+                        <td>99.99</td>
+                        <td><strong>0.03</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>269</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypgml5.jpg</td>
+                        <td>AI</td>
+                        <td>98.35</td>
+                        <td>98.00</td>
+                        <td><strong>0.35</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>270</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypjzgt.jpg</td>
+                        <td>AI</td>
+                        <td>99.69</td>
+                        <td>99.59</td>
+                        <td><strong>0.10</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>271</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypl628.jpg</td>
+                        <td>AI</td>
+                        <td>97.76</td>
+                        <td>97.01</td>
+                        <td><strong>0.75</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>272</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypopd3.png</td>
+                        <td>AI</td>
+                        <td>99.83</td>
+                        <td>99.77</td>
+                        <td><strong>0.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>273</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yppm6w.jpg</td>
+                        <td>AI</td>
+                        <td>99.33</td>
+                        <td>99.76</td>
+                        <td><strong>0.43</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>274</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypqq0r.png</td>
+                        <td>AI</td>
+                        <td>97.99</td>
+                        <td>97.39</td>
+                        <td><strong>0.60</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>275</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypqrhe.png</td>
+                        <td>AI</td>
+                        <td>99.96</td>
+                        <td>99.96</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>276</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypszwf.png</td>
+                        <td>AI</td>
+                        <td>98.65</td>
+                        <td>98.23</td>
+                        <td><strong>0.42</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>277</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypt6io.jpg</td>
+                        <td>AI</td>
+                        <td>98.52</td>
+                        <td>99.26</td>
+                        <td><strong>0.74</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>278</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yptdkq.png</td>
+                        <td>AI</td>
+                        <td>99.82</td>
+                        <td>99.82</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>279</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypv4wt.jpg</td>
+                        <td>AI</td>
+                        <td>99.08</td>
+                        <td>98.77</td>
+                        <td><strong>0.31</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>280</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypvbvg.png</td>
+                        <td>AI</td>
+                        <td>99.88</td>
+                        <td>99.83</td>
+                        <td><strong>0.05</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>281</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypvjqo.png</td>
+                        <td>AI</td>
+                        <td>99.80</td>
+                        <td>100.00</td>
+                        <td><strong>0.20</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>282</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypxzqp.png</td>
+                        <td>AI</td>
+                        <td>93.57</td>
+                        <td>91.43</td>
+                        <td><strong>2.14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>283</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">ypz5hh.png</td>
+                        <td>AI</td>
+                        <td>99.41</td>
+                        <td>99.22</td>
+                        <td><strong>0.19</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>284</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yq175l.png</td>
+                        <td>AI</td>
+                        <td>99.71</td>
+                        <td>99.64</td>
+                        <td><strong>0.07</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>285</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yq1ttc.png</td>
+                        <td>AI</td>
+                        <td>99.70</td>
+                        <td>99.61</td>
+                        <td><strong>0.09</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>286</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yq7ds2.png</td>
+                        <td>AI</td>
+                        <td>99.88</td>
+                        <td>99.97</td>
+                        <td><strong>0.09</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>287</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yq8sb2.png</td>
+                        <td>AI</td>
+                        <td>98.15</td>
+                        <td>99.97</td>
+                        <td><strong>1.82</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>288</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yqbqur.jpg</td>
+                        <td>AI</td>
+                        <td>98.23</td>
+                        <td>97.93</td>
+                        <td><strong>0.30</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>289</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yqddup.png</td>
+                        <td>AI</td>
+                        <td>95.49</td>
+                        <td>99.30</td>
+                        <td><strong>3.81</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>290</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yqhmuk.jpg</td>
+                        <td>AI</td>
+                        <td>99.96</td>
+                        <td>100.00</td>
+                        <td><strong>0.04</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>291</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yqlnhl.jpg</td>
+                        <td>AI</td>
+                        <td>99.71</td>
+                        <td>99.65</td>
+                        <td><strong>0.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>292</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yqqn3m.png</td>
+                        <td>AI</td>
+                        <td>99.99</td>
+                        <td>99.99</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>293</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yr78j8.png</td>
+                        <td>AI</td>
+                        <td>99.84</td>
+                        <td>99.90</td>
+                        <td><strong>0.06</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>294</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yr7tzn.jpg</td>
+                        <td>AI</td>
+                        <td>93.76</td>
+                        <td>96.55</td>
+                        <td><strong>2.79</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>295</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yr88l0.png</td>
+                        <td>AI</td>
+                        <td>80.34</td>
+                        <td>73.80</td>
+                        <td><strong>6.54</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>296</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yrc0xj.png</td>
+                        <td>AI</td>
+                        <td>99.98</td>
+                        <td>99.98</td>
+                        <td><strong>0.00</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>297</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yrj5qu.jpg</td>
+                        <td>AI</td>
+                        <td>90.47</td>
+                        <td>87.33</td>
+                        <td><strong>3.14</strong></td>
+                    </tr>
+
+                    <tr>
+                        <td>298</td>
+                        <td style="font-family: monospace; font-size: 0.85em; text-align: left;">yrky02.jpg</td>
+                        <td>AI</td>
+                        <td>75.57</td>
+                        <td>67.43</td>
+                        <td><strong>8.14</strong></td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+        
+        <script>
+            // Simple table search
+            function filterTable() {
+                const input = document.getElementById('searchInput');
+                const filter = input.value.toLowerCase();
+                const table = document.getElementById('detailTable');
+                const tr = table.getElementsByTagName('tr');
+                
+                for (let i = 1; i < tr.length; i++) {
+                    const td = tr[i].getElementsByTagName('td');
+                    let found = false;
+                    for (let j = 0; j < td.length; j++) {
+                        if (td[j].innerText.toLowerCase().indexOf(filter) > -1) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    tr[i].style.display = found ? '' : 'none';
+                }
+            }
+        </script>
+    </div>
+</body>
+</html>
