@@ -956,6 +956,8 @@ async def analyze_image(image_path: str) -> dict:
                 weighted_sum = 0.0
                 total_weight = 0.0
                 weighted_votes = 0.0
+                ai_votes_info = []
+                real_votes_info = []
             
                 for model_name, model_result in results["models"].items():
                     if "error" not in model_result:
@@ -967,20 +969,51 @@ async def analyze_image(image_path: str) -> dict:
                         
                         if confidence >= 50:
                             weighted_votes += weight
+                            ai_votes_info.append((model_name, confidence))
+                        else:
+                            real_votes_info.append((model_name, confidence))
             
                 if total_weight > 0:
                     boosting_ensemble_probability = weighted_sum / total_weight
                     weighted_vote_strength = weighted_votes / total_weight
                     total_models = len([m for m in results["models"].values() if "error" not in m])
-                    count_ai_votes = len([
-                        m for m in results["models"].values()
-                        if "error" not in m and m["confidence"] >= 50
-                    ])
-                    count_majority = count_ai_votes >= max(2, round(total_models * 0.75))  
-                    is_ai_generated = (
-                        (boosting_ensemble_probability >= 70.0 and weighted_vote_strength >= 0.5)
-                        or count_majority
-                    )
+                    count_ai_votes = len(ai_votes_info)
+                    count_real_votes = len(real_votes_info)
+                    
+                    # ระบบตัดสินตามเงื่อนไข:
+                    # เงื่อนไขที่ 1: คะแนนรวม >= 70% AND น้ำหนักรวม >= 50%
+                    # เงื่อนไขที่ 2: อย่างน้อย 3 ใน 4 โมเดล vote AI AND คะแนนรวม >= 70%
+                    # กรณี 2:2: ถ้า weighted_vote_strength = 0.5 พอดี ให้ดูคะแนนรวม >= 70%
+                    
+                    is_ai_generated = False
+                    tie_breaker_reason = ""
+                    condition_met = ""
+                    
+                    # เงื่อนไขที่ 1
+                    if boosting_ensemble_probability >= 70.0 and weighted_vote_strength >= 0.5:
+                        is_ai_generated = True
+                        condition_met = "Condition 1 passed (score ≥ 70% AND weight_strength ≥ 50%)"
+                    
+                    # เงื่อนไขที่ 2
+                    elif count_ai_votes >= 3 and boosting_ensemble_probability >= 70.0:
+                        is_ai_generated = True
+                        condition_met = f"Condition 2 passed ({count_ai_votes}/4 models vote AI AND score ≥ 70%)"
+                    
+                    # กรณี 2:2 หรือตัดสินใจใหม่
+                    else:
+                        is_ai_generated = False
+                        condition_met = "No condition met → Classify as Real"
+                    
+                    if count_ai_votes == count_real_votes and count_ai_votes == 2:
+                        # 2:2 tie - คะแนนรวม >= 70% ฟันธง AI, < 70% ฟันธง Real
+                        if boosting_ensemble_probability >= 70.0:
+                            is_ai_generated = True
+                            tie_breaker_reason = f"(2:2 tie-breaker: score {boosting_ensemble_probability:.1f}% ≥ 70% → AI)"
+                        else:
+                            is_ai_generated = False
+                            tie_breaker_reason = f"(2:2 tie-breaker: score {boosting_ensemble_probability:.1f}% < 70% → Real)"
+                        condition_met = tie_breaker_reason
+                        logger.info(f"2:2 Split detected - {tie_breaker_reason}")
 
                     results["ensemble"] = {
                         "isAIGenerated": bool(is_ai_generated),
@@ -990,9 +1023,10 @@ async def analyze_image(image_path: str) -> dict:
                         "probability": float(boosting_ensemble_probability / 100.0),
                         "ensemble_type": "Weighted Average + Majority Vote Ensemble",
                         "weighted_details": model_results_for_ensemble,
-                        "weighted_vote_strength": float(weighted_vote_strength)
+                        "weighted_vote_strength": float(weighted_vote_strength),
+                        "condition_met": condition_met
                     }
-                    logger.info(f"Weighted average: {boosting_ensemble_probability:.2f}% AI | vote_strength: {weighted_vote_strength:.2f} | isAI: {is_ai_generated}")
+                    logger.info(f"Ensemble decision: {is_ai_generated} | Score: {boosting_ensemble_probability:.2f}% | Vote strength: {weighted_vote_strength:.2f} | {condition_met}")
                 else:
                     logger.warning("Weighted average failed - attempting weight stacking fallback")
                     

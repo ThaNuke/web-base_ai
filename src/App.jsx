@@ -70,7 +70,7 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [loadingStep, setLoadingStep] = useState(null) 
+
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [selectedMethod, setSelectedMethod] = useState(null)
@@ -178,7 +178,7 @@ function App() {
     }
 
     setLoading(true)
-    setLoadingStep('ai')
+
     setError(null)
     setResult(null)
 
@@ -201,7 +201,7 @@ function App() {
       setError(err.message || 'Server error.')
     } finally {
       setLoading(false)
-      setLoadingStep(null)
+
     }
   }
 
@@ -326,18 +326,17 @@ function App() {
 
                     {loading && (
                       <div className="loading-container">
-                        <div className="loading-spinner">
-                          <div className="spinner-circle"></div>
-                          <div className="spinner-circle"></div>
-                          <div className="spinner-circle"></div>
-                        </div>
-                        <h3 className="loading-text"> Analyzing with AI Models...</h3>
-                        <div className="loading-steps">
-                          <div className={`loading-step ${loadingStep === 'ai' ? 'active' : ''}`}>
-                            <span className="step-dot">1</span>
-                            <span>AI Model Analysis</span>
+                        <div className="skeleton-loader">
+                          <div className="skeleton-ring-wrapper">
+                            <div className="skeleton-ring"></div>
+                          </div>
+                          <div className="skeleton-lines">
+                            <div className="skeleton-line skeleton-line-lg"></div>
+                            <div className="skeleton-line skeleton-line-md"></div>
+                            <div className="skeleton-line skeleton-line-sm"></div>
                           </div>
                         </div>
+                        <h3 className="loading-text">Analyzing...</h3>
                       </div>
                     )}
                   </div>
