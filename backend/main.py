@@ -196,14 +196,14 @@ BACKGROUND_DIR.mkdir(exist_ok=True)
 ALLOWED_EXTENSIONS = {".jpeg", ".jpg", ".png"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  
 
-ENSEMBLE_METHOD = "weighted_average"  
+ENSEMBLE_METHOD = "majority_vote"  
 
 
 MODEL_WEIGHTS = {
-    "ela": 0.24,
-    "pixel": 0.16,
-    "frequency": 0.38,
-    "xception": 0.22
+    "ela": 0.22,
+    "pixel": 0.19,
+    "frequency": 0.39,
+    "xception": 0.2
 }
 
 _model: Optional[object] = None
@@ -950,140 +950,83 @@ async def analyze_image(image_path: str) -> dict:
                         "weighted_score": MODEL_WEIGHTS.get(model_name, 0.25) * confidence
                     }
         
-            if ENSEMBLE_METHOD == "weighted_average":
-                logger.info("Using weighted average ensemble (weighted voting) as primary ensemble")
+            if ENSEMBLE_METHOD == "majority_vote":
+                logger.info("ใช้ Simple Majority Vote Ensemble")
             
-                weighted_sum = 0.0
-                total_weight = 0.0
-                weighted_votes = 0.0
+                ai_votes = 0
+                real_votes = 0
+                total_confidence = 0.0
                 ai_votes_info = []
                 real_votes_info = []
             
                 for model_name, model_result in results["models"].items():
                     if "error" not in model_result:
-                        weight = MODEL_WEIGHTS.get(model_name, 0.25)
                         confidence = model_result["confidence"]
-                        
-                        weighted_sum += weight * confidence
-                        total_weight += weight
+                        total_confidence += confidence
                         
                         if confidence >= 50:
-                            weighted_votes += weight
+                            ai_votes += 1
                             ai_votes_info.append((model_name, confidence))
                         else:
+                            real_votes += 1
                             real_votes_info.append((model_name, confidence))
             
-                if total_weight > 0:
-                    boosting_ensemble_probability = weighted_sum / total_weight
-                    weighted_vote_strength = weighted_votes / total_weight
-                    total_models = len([m for m in results["models"].values() if "error" not in m])
-                    count_ai_votes = len(ai_votes_info)
-                    count_real_votes = len(real_votes_info)
+                total_models = len([m for m in results["models"].values() if "error" not in m])
+                
+                if total_models > 0:
+                    average_confidence = total_confidence / total_models
                     
-                    # ระบบตัดสินตามเงื่อนไข:
-                    # เงื่อนไขที่ 1: คะแนนรวม >= 70% AND น้ำหนักรวม >= 50%
-                    # เงื่อนไขที่ 2: อย่างน้อย 3 ใน 4 โมเดล vote AI AND คะแนนรวม >= 70%
-                    # กรณี 2:2: ถ้า weighted_vote_strength = 0.5 พอดี ให้ดูคะแนนรวม >= 70%
-                    
-                    is_ai_generated = False
-                    tie_breaker_reason = ""
-                    condition_met = ""
-                    
-                    # เงื่อนไขที่ 1
-                    if boosting_ensemble_probability >= 70.0 and weighted_vote_strength >= 0.5:
+                    # Majority Vote Logic:
+                    # ถ้า >= 3 models vote AI → ฟันธง AI เลย (ไม่ต้องดูคะแนน)
+                    # ถ้า < 3 models vote AI → ใช้ threshold 70% ตัดสินใจ
+                    if ai_votes >= 3:
                         is_ai_generated = True
-                        condition_met = "Condition 1 passed (score ≥ 70% AND weight_strength ≥ 50%)"
-                    
-                    # เงื่อนไขที่ 2
-                    elif count_ai_votes >= 3 and boosting_ensemble_probability >= 70.0:
+                        condition_reason = f"Majority Vote: {ai_votes}/{total_models} models vote AI"
+                    elif average_confidence >= 70.0:
                         is_ai_generated = True
-                        condition_met = f"Condition 2 passed ({count_ai_votes}/4 models vote AI AND score ≥ 70%)"
-                    
-                    # กรณี 2:2 หรือตัดสินใจใหม่
+                        condition_reason = f"Threshold: Average Score {average_confidence:.1f}% ≥ 70%"
                     else:
                         is_ai_generated = False
-                        condition_met = "No condition met → Classify as Real"
+                        condition_reason = f"Not AI: {ai_votes}/{total_models} vote + Score {average_confidence:.1f}% < 70%"
                     
-                    if count_ai_votes == count_real_votes and count_ai_votes == 2:
-                        # 2:2 tie - คะแนนรวม >= 70% ฟันธง AI, < 70% ฟันธง Real
-                        if boosting_ensemble_probability >= 70.0:
-                            is_ai_generated = True
-                            tie_breaker_reason = f"(2:2 tie-breaker: score {boosting_ensemble_probability:.1f}% ≥ 70% → AI)"
-                        else:
-                            is_ai_generated = False
-                            tie_breaker_reason = f"(2:2 tie-breaker: score {boosting_ensemble_probability:.1f}% < 70% → Real)"
-                        condition_met = tie_breaker_reason
-                        logger.info(f"2:2 Split detected - {tie_breaker_reason}")
-
                     results["ensemble"] = {
                         "isAIGenerated": bool(is_ai_generated),
-                        "confidence": float(boosting_ensemble_probability),
-                        "confidence_rounded": round(float(boosting_ensemble_probability), 2),
-                        "votes": f"{weighted_votes:.2f}/{total_weight:.2f} (weighted majority vote)",
-                        "probability": float(boosting_ensemble_probability / 100.0),
-                        "ensemble_type": "Weighted Average + Majority Vote Ensemble",
+                        "confidence": float(average_confidence),
+                        "confidence_rounded": round(float(average_confidence), 2),
+                        "votes": f"{ai_votes}/{total_models} (simple majority vote )",
+                        "probability": float(average_confidence / 100.0),
+                        "ensemble_type": "Simple Majority Vote Ensemble  + Threshold 70%",
                         "weighted_details": model_results_for_ensemble,
-                        "weighted_vote_strength": float(weighted_vote_strength),
-                        "condition_met": condition_met
+                        "vote_distribution": f"{ai_votes} AI vs {real_votes} Real",
+                        "condition_met": condition_reason
                     }
-                    logger.info(f"Ensemble decision: {is_ai_generated} | Score: {boosting_ensemble_probability:.2f}% | Vote strength: {weighted_vote_strength:.2f} | {condition_met}")
+                    logger.info(f"Ensemble decision: {is_ai_generated} | Average Score: {average_confidence:.2f}% | {condition_reason}")
                 else:
-                    logger.warning("Weighted average failed - attempting weight stacking fallback")
+                    logger.warning("ไม่มีโมเดลที่ทำงานได้ - ใช้ fallback")
                     
-                    stacking_model, stacking_checkpoint = load_stacking_model()
-                    
-                    if stacking_model is not None and len(model_predictions) >= 3:
-                        stacking_input = np.zeros(4, dtype=np.float32)
-                        stacking_input[0] = model_predictions.get("ela", 0.5)
-                        stacking_input[1] = model_predictions.get("pixel", 0.5)
-                        stacking_input[2] = model_predictions.get("frequency", 0.5)
-                        stacking_input[3] = model_predictions.get("xception", 0.5)
-                        
-                        stacking_input_tensor = torch.from_numpy(stacking_input.reshape(1, -1)).float()
-                        
-                        with torch.no_grad():
-                            stacking_output = stacking_model(stacking_input_tensor)
-                            stacking_probability = float(stacking_output.item())
-                        
-                        stacking_ensemble_probability = stacking_probability * 100.0
-                        weighted_votes = sum([1.0 for conf in model_predictions.values() if conf >= 0.5])
-                        weighted_vote_strength = weighted_votes / len(model_predictions)
-                        
+                    if "ela" in results["models"] and "error" not in results["models"]["ela"]:
+                        ela_conf = results["models"]["ela"]["confidence"]
                         results["ensemble"] = {
-                            "isAIGenerated": bool(stacking_probability >= 0.5),
-                            "confidence": float(stacking_ensemble_probability),
-                            "confidence_rounded": round(float(stacking_ensemble_probability), 2),
-                            "votes": f"{weighted_votes:.1f}/{len(model_predictions):.1f} (weight stacking fallback)",
-                            "probability": float(stacking_probability),
-                            "ensemble_type": "Fallback: Weight Stacking Ensemble (Neural Network Meta-Learner)",
-                            "weighted_vote_strength": float(weighted_vote_strength)
+                            "isAIGenerated": bool(ela_conf >= 50),
+                            "confidence": ela_conf,
+                            "confidence_rounded": round(ela_conf, 2),
+                            "votes": "1/1 (ELA only - fallback)",
+                            "probability": float(ela_conf / 100.0),
+                            "ensemble_type": "Fallback (ELA only)"
                         }
-                        logger.info(f"Weight stacking fallback: {stacking_ensemble_probability:.2f}% AI")
+                        logger.info(f"ELA fallback: {ela_conf:.2f}% AI")
                     else:
-
-                        if "ela" in results["models"] and "error" not in results["models"]["ela"]:
-                            ela_conf = results["models"]["ela"]["confidence"]
-                            results["ensemble"] = {
-                                "isAIGenerated": bool(ela_conf >= 50),
-                                "confidence": ela_conf,
-                                "confidence_rounded": round(ela_conf, 2),
-                                "votes": "1/1 (ELA only - fallback)",
-                                "probability": float(ela_conf / 100.0),
-                                "ensemble_type": "Fallback (ELA only)"
-                            }
-                            logger.info(f"ELA fallback: {ela_conf:.2f}% AI")
-                        else:
-                            results["ensemble"] = {
-                                "isAIGenerated": False,
-                                "confidence": 0.0,
-                                "confidence_rounded": 0.0,
-                                "votes": "0/0 (no models available)",
-                                "probability": 0.0,
-                                "ensemble_type": "No models available",
-                                "weighted_details": {},
-                                "weighted_vote_strength": 0.0
-                            }
-                            logger.warning("No models available; returning empty ensemble result")
+                        results["ensemble"] = {
+                            "isAIGenerated": False,
+                            "confidence": 0.0,
+                            "confidence_rounded": 0.0,
+                            "votes": "0/0 (no models available)",
+                            "probability": 0.0,
+                            "ensemble_type": "No models available",
+                            "weighted_details": {},
+                            "vote_distribution": "No data"
+                        }
+                        logger.warning("ไม่มีโมเดลที่ทำงานได้")
         
             else:
                 logger.info("Using weight stacking (neural network meta-learner) as primary ensemble")
@@ -1389,12 +1332,13 @@ async def analyze_image_endpoint(image: UploadFile = File(...), force: Optional[
                 "details": {
                     "probability": float(ensemble["probability"]),
                     "ensemble_votes": ensemble["votes"],
-                    "ensemble_type": ensemble.get("ensemble_type", "Weighted Average Ensemble"),
+                    "ensemble_type": ensemble.get("ensemble_type", "Simple Majority Vote Ensemble"),
                     "timestamp": datetime.now().isoformat(),
-                    "model_type": "Weighted Average Ensemble (ELA + Pixel + Frequency + Xception)"
+                    "model_type": "Simple Majority Vote (ELA + Pixel + Frequency + Xception)",
+                    "vote_distribution": ensemble.get("vote_distribution", "N/A")
                 },
                 "individual_models": models,
-                "ensemble_method": "weight_average",
+                "ensemble_method": "majority_vote",
                 "ensemble_weights": {
                     "ela": MODEL_WEIGHTS["ela"],
                     "pixel": MODEL_WEIGHTS["pixel"],
@@ -1402,7 +1346,7 @@ async def analyze_image_endpoint(image: UploadFile = File(...), force: Optional[
                     "xception": MODEL_WEIGHTS["xception"]
                 },
                 "weighted_details": ensemble.get("weighted_details", {}),
-                "weighted_vote_strength": ensemble.get("weighted_vote_strength", 0)
+                "vote_distribution": ensemble.get("vote_distribution", "N/A")
             }
         }
         

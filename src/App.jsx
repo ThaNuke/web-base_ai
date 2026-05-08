@@ -368,9 +368,9 @@ function App() {
                 )}
 
                 {result && (() => {
-                  // Backend `confidence` is an AI-likelihood percentage (0-100).
+                  // Backend `probability` is the AI-likelihood percentage (0-100).
                   // For UI consistency, derive the headline/badge/classification from this same number.
-                  const aiProbRaw = Number(result.confidence)
+                  const aiProbRaw = Number(result.details?.probability || result.confidence)
                   const aiProb = Number.isFinite(aiProbRaw) ? Math.min(100, Math.max(0, aiProbRaw)) : 0
                   const realProb = 100 - aiProb
                   // Use backend's final verdict when available (more consistent than local thresholds).
