@@ -200,10 +200,10 @@ ENSEMBLE_METHOD = "weighted_average"
 
 
 MODEL_WEIGHTS = {
-    "ela": 0.22,
-    "pixel": 0.19,
-    "frequency": 0.39,
-    "xception": 0.20
+    "ela": 0.24,
+    "pixel": 0.16,
+    "frequency": 0.38,
+    "xception": 0.22
 }
 
 _model: Optional[object] = None
